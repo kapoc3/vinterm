@@ -495,13 +495,6 @@ function App() {
         <div style={{ padding: '20px 20px 10px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-main)' }}>VinTerm</h2>
-            <button 
-              onClick={openSettings}
-              style={{ cursor: 'pointer', backgroundColor: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem' }}
-              title="Settings"
-            >
-              ⚙️
-            </button>
           </div>
           
           <button 
@@ -543,6 +536,17 @@ function App() {
           
           {renderTree(null)}
 
+        </div>
+        
+        {/* Bottom Settings Button */}
+        <div 
+          onClick={openSettings}
+          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+        >
+          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>⚙️</span>
+          <span style={{ color: 'var(--text-muted)', fontWeight: '500', fontSize: '0.9rem' }}>{t('settingsTitle', settings.language)}</span>
         </div>
       </div>
 
