@@ -4,7 +4,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { SiJavascript, SiTypescript, SiPython, SiHtml5, SiCss, SiMarkdown, SiJson, SiGnubash, SiReact, SiYaml, SiCplusplus } from 'react-icons/si';
 import { FaJava, FaMicrochip, FaMemory, FaHdd } from 'react-icons/fa';
-import { VscFile, VscFolder, VscSettingsGear, VscSymbolKey, VscLock, VscArchive } from 'react-icons/vsc';
+import { VscFile, VscFolder, VscSettingsGear, VscSymbolKey, VscLock, VscArchive, VscSparkle } from 'react-icons/vsc';
 import { FcImageFile } from 'react-icons/fc';
 import 'xterm/css/xterm.css';
 
@@ -655,6 +655,124 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
   );
 };
 
+
+const AiDrawer = ({ id, isActive, onClose }: { id: string, isActive: boolean, onClose?: () => void }) => {
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('vinterm-ai-key') || '');
+  const [prompt, setPrompt] = useState('');
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSaveKey = (e: any) => {
+    setApiKey(e.target.value);
+    localStorage.setItem('vinterm-ai-key', e.target.value);
+  };
+
+  const handleAsk = async () => {
+    if (!prompt.trim() || !apiKey.trim()) return;
+    setLoading(true);
+    setError('');
+    setResponse('');
+    
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'You are an AI assistant in a terminal. The user will ask how to do something in bash/linux. You must respond ONLY with the raw bash command to execute, with no markdown formatting, no backticks, and no explanations. If you must explain, prefix the explanation with # on a new line.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1
+        })
+      });
+      
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Error fetching response');
+      }
+      
+      const data = await res.json();
+      const content = data.choices[0].message.content;
+      // Strip markdown code blocks if any
+      const cleaned = content.replace(/\^\s*```(bash|sh)?/gm, '').replace(/```\s*\$/gm, '').trim();
+      setResponse(cleaned);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const insertCommand = () => {
+    if (response) {
+      window.electronAPI.sendToTerminal(id, response);
+    }
+  };
+
+  if (!isActive) return null;
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', padding: '12px', borderLeft: '1px solid var(--border-light)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--neon-green, #00ff00)' }}>
+          <VscSparkle /> AI Copilot
+        </h3>
+        <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={onClose} title="Cerrar"><polyline points="18 15 12 9 6 15"></polyline></SvgIcon>
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>OpenAI API Key</label>
+        <input 
+          type="password" 
+          value={apiKey} 
+          onChange={handleSaveKey}
+          placeholder="sk-..."
+          style={{ width: '100%', padding: '6px 8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px' }} 
+        />
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <textarea 
+          value={prompt}
+          onChange={e => setPrompt(e.target.value)}
+          placeholder="¿Qué quieres hacer? (ej. buscar archivos modificados hoy, comprimir un directorio...)"
+          style={{ height: '80px', width: '100%', resize: 'none', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px', fontFamily: 'inherit' }}
+        />
+        
+        <button 
+          onClick={handleAsk}
+          disabled={loading || !prompt.trim() || !apiKey.trim()}
+          style={{ padding: '8px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '4px', cursor: (loading || !prompt.trim() || !apiKey.trim()) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (loading || !prompt.trim() || !apiKey.trim()) ? 0.5 : 1 }}
+        >
+          {loading ? 'Pensando...' : 'Generar Comando'}
+        </button>
+
+        {error && <div style={{ color: '#ff6b6b', fontSize: '11px', marginTop: '4px' }}>{error}</div>}
+
+        {response && (
+          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sugerencia:</label>
+            <div style={{ padding: '10px', backgroundColor: '#000', border: '1px solid var(--border-color)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+              {response}
+            </div>
+            <button 
+              onClick={insertCommand}
+              style={{ padding: '6px', backgroundColor: 'var(--bg-input)', color: '#fff', border: '1px solid var(--neon-green, #00ff00)', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              Insertar en Terminal
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, isActive, settings = defaultTermSettings }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -662,6 +780,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
   const fitAddonRef = useRef<FitAddon | null>(null);
   const isInitialized = useRef(false);
   const [showSftp, setShowSftp] = useState(false);
+  const [showAi, setShowAi] = useState(false);
   const [sftpWidth, setSftpWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -928,9 +1047,12 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
           </div>
 
           {/* SFTP Content Wrapper */}
-          <div style={{ width: `${sftpWidth}px`, height: '100%', overflow: 'hidden' }}>
+          <div style={{ width: (showSftp || showAi) ? `${sftpWidth}px` : '0px', borderLeft: (showSftp || showAi) ? '1px solid var(--border-light)' : 'none', height: '100%', overflow: 'hidden' }}>
             {type === 'ssh' && (
-              <SftpViewer id={id} isActive={showSftp && isActive} onClose={() => setShowSftp(false)} />
+              <>
+                {showSftp && <SftpViewer id={id} isActive={showSftp && isActive} onClose={() => setShowSftp(false)} />}
+                {showAi && <AiDrawer id={id} isActive={showAi && isActive} onClose={() => setShowAi(false)} />}
+              </>
             )}
           </div>
         </div>
