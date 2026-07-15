@@ -10,6 +10,9 @@ interface TerminalSettings {
   background: string;
   theme?: 'light' | 'dark' | 'vincent';
   language?: 'en' | 'es';
+  aiBaseUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
 }
 
 interface Folder {
@@ -45,7 +48,10 @@ const defaultSettings: TerminalSettings = {
   foreground: '#ffffff',
   background: '#1e1e1e',
   theme: 'dark',
-  language: 'es'
+  language: 'es',
+  aiBaseUrl: 'https://api.openai.com/v1',
+  aiModel: 'gpt-4o-mini',
+  aiApiKey: ''
 }
 
 function App() {
@@ -101,6 +107,7 @@ function App() {
   const [folderForm, setFolderForm] = useState({ name: '', parentId: '' })
   const [sshForm, setSshForm] = useState({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false })
   const [settingsForm, setSettingsForm] = useState<TerminalSettings>(settings)
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'terminal' | 'ai'>('general')
   
   const [availableFonts, setAvailableFonts] = useState<string[]>(['Menlo', 'Monaco', 'Courier New', 'monospace'])
 
@@ -592,75 +599,146 @@ function App() {
       {/* Settings Modal */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'var(--overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--bg-panel)', padding: '30px', borderRadius: '8px', width: '400px', border: '1px solid var(--border-color)' }}>
-            <h3 style={{ marginTop: 0 }}>{t('settingsTitle', settings.language)}</h3>
-            <form onSubmit={handleSettingsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Font Size:</label>
-                <input required type="number" min="8" max="48" value={settingsForm.fontSize} onChange={e => setSettingsForm({...settingsForm, fontSize: parseInt(e.target.value) || 14})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('appTheme', settings.language)}:</label>
-                <select required value={settingsForm.theme || 'dark'} onChange={e => {
-                  const newTheme = e.target.value as 'light' | 'dark';
-                  const newBg = newTheme === 'light' ? '#ffffff' : '#1e1e1e';
-                  const newFg = newTheme === 'light' ? '#000000' : '#ffffff';
-                  setSettingsForm({...settingsForm, theme: newTheme, background: newBg, foreground: newFg});
-                }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
-                  <option value="dark">{t('darkTheme', settings.language)}</option>
-                  <option value="light">{t('lightTheme', settings.language)}</option>
-                  <option value="vincent">{t('vincentTheme', settings.language)}</option>
-                </select>
-              </div>
-              
-              <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('language', settings.language)}:</label>
-                <select required value={settingsForm.language || 'es'} onChange={e => setSettingsForm({...settingsForm, language: e.target.value as 'en'|'es'})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
-                  <option value="es">Español</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-<div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('fontFamily', settings.language)}:</label>
-                <select required value={settingsForm.fontFamily} onChange={e => setSettingsForm({...settingsForm, fontFamily: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
-                  {availableFonts.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Text Color:</label>
-                  <input required type="color" value={settingsForm.foreground} onChange={e => setSettingsForm({...settingsForm, foreground: e.target.value})} style={{ width: '100%', height: '40px', padding: '2px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Background Color:</label>
-                  <input required type="color" value={settingsForm.background} onChange={e => setSettingsForm({...settingsForm, background: e.target.value})} style={{ width: '100%', height: '40px', padding: '2px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }} />
-                </div>
-              </div>
+          <div style={{ backgroundColor: 'var(--bg-panel)', borderRadius: '8px', width: '650px', height: '450px', border: '1px solid var(--border-color)', display: 'flex', overflow: 'hidden' }}>
+            
+            {/* Sidebar Tabs */}
+            <div style={{ width: '180px', backgroundColor: 'var(--bg-input)', borderRight: '1px solid var(--border-light)', padding: '20px 0' }}>
+              <h3 style={{ marginTop: 0, padding: '0 20px', fontSize: '1.1rem' }}>{t('settingsTitle', settings.language)}</h3>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column' }}>
+                <li 
+                  onClick={() => setActiveSettingsTab('general')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'general' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'general' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'general' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  General
+                </li>
+                <li 
+                  onClick={() => setActiveSettingsTab('terminal')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'terminal' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'terminal' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'terminal' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  Terminal
+                </li>
+                <li 
+                  onClick={() => setActiveSettingsTab('ai')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'ai' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'ai' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'ai' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  IA Copilot
+                </li>
+              </ul>
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Preview:</label>
-                <div style={{
-                  padding: '10px 15px',
-                  backgroundColor: settingsForm.background,
-                  color: settingsForm.foreground,
-                  fontFamily: settingsForm.fontFamily,
-                  fontSize: `${settingsForm.fontSize}px`,
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-light)',
-                  minHeight: '80px',
-                  boxShadow: 'inset 0 0 10px var(--overlay)',
-                  wordBreak: 'break-all'
-                }}>
-                  vicente@local:~$ echo "Hello VinTerm!"<br/>
-                  Hello VinTerm!
+            {/* Content Area */}
+            <div style={{ flex: 1, padding: '20px 30px', display: 'flex', flexDirection: 'column' }}>
+              <form onSubmit={handleSettingsSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
+                
+                {/* GENERAL TAB */}
+                {activeSettingsTab === 'general' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>General</h2>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('appTheme', settings.language)}:</label>
+                      <select required value={settingsForm.theme || 'dark'} onChange={e => {
+                        const newTheme = e.target.value as 'light' | 'dark' | 'vincent';
+                        const newBg = newTheme === 'light' ? '#ffffff' : (newTheme === 'vincent' ? '#0d1117' : '#1e1e1e');
+                        const newFg = newTheme === 'light' ? '#000000' : '#ffffff';
+                        setSettingsForm({...settingsForm, theme: newTheme, background: newBg, foreground: newFg});
+                      }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
+                        <option value="dark">{t('darkTheme', settings.language)}</option>
+                        <option value="light">{t('lightTheme', settings.language)}</option>
+                        <option value="vincent">{t('vincentTheme', settings.language)}</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('language', settings.language)}:</label>
+                      <select required value={settingsForm.language || 'es'} onChange={e => setSettingsForm({...settingsForm, language: e.target.value as 'en'|'es'})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
+                        <option value="es">Español</option>
+                        <option value="en">English</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* TERMINAL TAB */}
+                {activeSettingsTab === 'terminal' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>Terminal</h2>
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('fontFamily', settings.language)}:</label>
+                        <select required value={settingsForm.fontFamily} onChange={e => setSettingsForm({...settingsForm, fontFamily: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
+                          {availableFonts.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ width: '100px' }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Font Size:</label>
+                        <input required type="number" min="8" max="48" value={settingsForm.fontSize} onChange={e => setSettingsForm({...settingsForm, fontSize: parseInt(e.target.value) || 14})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Text Color:</label>
+                        <input required type="color" value={settingsForm.foreground} onChange={e => setSettingsForm({...settingsForm, foreground: e.target.value})} style={{ width: '100%', height: '40px', padding: '2px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Background Color:</label>
+                        <input required type="color" value={settingsForm.background} onChange={e => setSettingsForm({...settingsForm, background: e.target.value})} style={{ width: '100%', height: '40px', padding: '2px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Preview:</label>
+                      <div style={{
+                        padding: '10px 15px',
+                        backgroundColor: settingsForm.background,
+                        color: settingsForm.foreground,
+                        fontFamily: settingsForm.fontFamily,
+                        fontSize: `${settingsForm.fontSize}px`,
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-light)',
+                        minHeight: '80px',
+                        boxShadow: 'inset 0 0 10px var(--overlay)',
+                        wordBreak: 'break-all'
+                      }}>
+                        vicente@local:~$ echo "Hello VinTerm!"<br/>
+                        Hello VinTerm!
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* AI COPILOT TAB */}
+                {activeSettingsTab === 'ai' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>IA Copilot</h2>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>Configura el servidor y las credenciales para la inteligencia artificial. Funciona con OpenAI, Ollama o cualquier API compatible.</p>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Base URL:</label>
+                      <input type="text" value={settingsForm.aiBaseUrl || ''} onChange={e => setSettingsForm({...settingsForm, aiBaseUrl: e.target.value})} placeholder="https://api.openai.com/v1" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>API Key (Opcional para Ollama locales):</label>
+                      <input type="password" value={settingsForm.aiApiKey || ''} onChange={e => setSettingsForm({...settingsForm, aiApiKey: e.target.value})} placeholder="sk-..." style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Model:</label>
+                      <input type="text" value={settingsForm.aiModel || ''} onChange={e => setSettingsForm({...settingsForm, aiModel: e.target.value})} placeholder="gpt-4o-mini" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                  </>
+                )}
+                
+                <div style={{ flex: 1 }}></div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '15px', borderTop: '1px solid var(--border-light)' }}>
+                  <button type="button" onClick={() => setShowSettingsModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
+                  <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('saveSettings', settings.language)}</button>
                 </div>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowSettingsModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
-                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('saveSettings', settings.language)}</button>
-              </div>
-            </form>
+              </form>
+            </div>
+
           </div>
         </div>
       )}

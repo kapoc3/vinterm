@@ -45,6 +45,9 @@ export interface TerminalSettings {
   fontSize: number;
   foreground: string;
   background: string;
+  aiBaseUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
 }
 
 interface TerminalProps {
@@ -656,29 +659,15 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
 };
 
 
-const AiDrawer = ({ id, isActive, onClose }: { id: string, isActive: boolean, onClose?: () => void }) => {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('vinterm-ai-key') || '');
-  const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('vinterm-ai-url') || 'https://api.openai.com/v1');
-  const [model, setModel] = useState(() => localStorage.getItem('vinterm-ai-model') || 'gpt-4o-mini');
+const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: boolean, onClose?: () => void, settings: TerminalSettings }) => {
+  const apiKey = settings?.aiApiKey || '';
+  const baseUrl = settings?.aiBaseUrl || 'https://api.openai.com/v1';
+  const model = settings?.aiModel || 'gpt-4o-mini';
+  
   const [prompt, setPrompt] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const handleSaveKey = (e: any) => {
-    setApiKey(e.target.value);
-    localStorage.setItem('vinterm-ai-key', e.target.value);
-  };
-  
-  const handleSaveUrl = (e: any) => {
-    setBaseUrl(e.target.value);
-    localStorage.setItem('vinterm-ai-url', e.target.value);
-  };
-  
-  const handleSaveModel = (e: any) => {
-    setModel(e.target.value);
-    localStorage.setItem('vinterm-ai-model', e.target.value);
-  };
 
   const handleAsk = async () => {
     if (!prompt.trim() || !apiKey.trim()) return;
@@ -737,42 +726,7 @@ const AiDrawer = ({ id, isActive, onClose }: { id: string, isActive: boolean, on
         <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={onClose} title="Cerrar"><polyline points="18 15 12 9 6 15"></polyline></SvgIcon>
       </div>
 
-      <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div>
-          <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Base URL (OpenAI, Ollama, LMStudio)</label>
-          <input 
-            type="text" 
-            value={baseUrl} 
-            onChange={handleSaveUrl}
-            placeholder="https://api.openai.com/v1"
-            style={{ width: '100%', padding: '6px 8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px' }} 
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>API Key</label>
-            <input 
-              type="password" 
-              value={apiKey} 
-              onChange={handleSaveKey}
-              placeholder="sk-..."
-              style={{ width: '100%', padding: '6px 8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px' }} 
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Model</label>
-            <input 
-              type="text" 
-              value={model} 
-              onChange={handleSaveModel}
-              placeholder="gpt-4o-mini"
-              style={{ width: '100%', padding: '6px 8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px' }} 
-            />
-          </div>
-        </div>
-      </div>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
         <textarea 
           value={prompt}
           onChange={e => setPrompt(e.target.value)}
@@ -1087,7 +1041,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
             {type === 'ssh' && (
               <>
                 {showSftp && <SftpViewer id={id} isActive={showSftp && isActive} onClose={() => setShowSftp(false)} />}
-                {showAi && <AiDrawer id={id} isActive={showAi && isActive} onClose={() => setShowAi(false)} />}
+                {showAi && <AiDrawer id={id} isActive={showAi && isActive} onClose={() => setShowAi(false)} settings={settings} />}
               </>
             )}
           </div>
