@@ -2,6 +2,10 @@ import { app, BrowserWindow, ipcMain, dialog, shell as electronShell, Menu } fro
 import { exec } from 'child_process'
 import * as path from 'path'
 import * as pty from 'node-pty'
+
+console.log('--- MAIN PROCESS STARTED ---');
+console.log('PTY object:', Object.keys(pty));
+console.log('PTY spawn type:', typeof pty.spawn);
 import { Client as SSHClient } from 'ssh2'
 import os from 'os'
 import fs from 'fs'
@@ -20,7 +24,7 @@ function createWindow() {
     height: 800,
     title: 'Vinterm',
     webPreferences: {
-      preload: path.join(__dirname, '../public/preload.js'),
+      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
     }
@@ -102,6 +106,7 @@ const sessions = new Map<string, any>()
 const shell = process.env[process.platform === 'win32' ? 'COMSPEC' : 'SHELL'] || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
 
 ipcMain.on('terminal.spawnLocal', (event, id) => {
+  console.log(`[IPC] terminal.spawnLocal received for id: ${id}`);
   try {
     const ptyProcess = pty.spawn(shell, [], {
       name: 'xterm-color',
