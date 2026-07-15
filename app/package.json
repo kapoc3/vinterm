@@ -3,7 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "description": "VinTerm - La Terminal del Futuro",
-  "author": "Kappsco",
+  "author": {
+    "name": "Kappsco",
+    "email": "kapoc3@users.noreply.github.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/kapoc3/vinterm.git"
