@@ -31,8 +31,32 @@ jobs:
         working-directory: ./app
         run: npm install
 
-      - name: Build and Publish Release
+      - name: Build Application
         working-directory: ./app
+        run: npm run dist -- -p never
+        
+      - name: Upload Artifacts to Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: vinterm-binaries-${{ matrix.os }}
+          path: |
+            app/release/*.dmg
+            app/release/*.zip
+            app/release/*.exe
+            app/release/*.AppImage
+            app/release/*.deb
+          retention-days: 7
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.4
+          name: VinTerm v1.0.4
+          files: |
+            app/release/*.dmg
+            app/release/*.zip
+            app/release/*.exe
+            app/release/*.AppImage
+            app/release/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist -- -p always
