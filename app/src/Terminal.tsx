@@ -48,6 +48,7 @@ export interface TerminalSettings {
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
+  aiProvider?: 'openai' | 'ollama' | 'deepseek' | 'custom';
 }
 
 interface TerminalProps {
@@ -663,6 +664,7 @@ const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: b
   const apiKey = settings?.aiApiKey || '';
   const baseUrl = settings?.aiBaseUrl || 'https://api.openai.com/v1';
   const model = settings?.aiModel || 'gpt-4o-mini';
+  const provider = settings?.aiProvider || 'openai';
   
   const [prompt, setPrompt] = useState('');
   const [response, setResponse] = useState('');
@@ -670,18 +672,22 @@ const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: b
   const [error, setError] = useState('');
 
   const handleAsk = async () => {
-    if (!prompt.trim() || !apiKey.trim()) return;
+    if (!prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) return;
     setLoading(true);
     setError('');
     setResponse('');
     
     try {
+      const headers: any = {
+        'Content-Type': 'application/json'
+      };
+      if (apiKey.trim()) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
+        headers: headers,
         body: JSON.stringify({
           model: model,
           messages: [
@@ -736,8 +742,8 @@ const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: b
         
         <button 
           onClick={handleAsk}
-          disabled={loading || !prompt.trim() || !apiKey.trim()}
-          style={{ padding: '8px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '4px', cursor: (loading || !prompt.trim() || !apiKey.trim()) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (loading || !prompt.trim() || !apiKey.trim()) ? 0.5 : 1 }}
+          disabled={loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())}
+          style={{ padding: '8px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '4px', cursor: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 0.5 : 1 }}
         >
           {loading ? 'Pensando...' : 'Generar Comando'}
         </button>

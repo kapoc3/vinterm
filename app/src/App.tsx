@@ -13,6 +13,7 @@ interface TerminalSettings {
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
+  aiProvider?: 'openai' | 'ollama' | 'deepseek' | 'custom';
 }
 
 interface Folder {
@@ -49,6 +50,7 @@ const defaultSettings: TerminalSettings = {
   background: '#1e1e1e',
   theme: 'dark',
   language: 'es',
+  aiProvider: 'openai',
   aiBaseUrl: 'https://api.openai.com/v1',
   aiModel: 'gpt-4o-mini',
   aiApiKey: ''
@@ -711,20 +713,57 @@ function App() {
                 {activeSettingsTab === 'ai' && (
                   <>
                     <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>IA Copilot</h2>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>Configura el servidor y las credenciales para la inteligencia artificial. Funciona con OpenAI, Ollama o cualquier API compatible.</p>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>Selecciona tu proveedor de inteligencia artificial.</p>
                     
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Base URL:</label>
-                      <input type="text" value={settingsForm.aiBaseUrl || ''} onChange={e => setSettingsForm({...settingsForm, aiBaseUrl: e.target.value})} placeholder="https://api.openai.com/v1" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                    </div>
-                    
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>API Key (Opcional para Ollama locales):</label>
-                      <input type="password" value={settingsForm.aiApiKey || ''} onChange={e => setSettingsForm({...settingsForm, aiApiKey: e.target.value})} placeholder="sk-..." style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Proveedor (Provider):</label>
+                      <select 
+                        value={settingsForm.aiProvider || 'openai'} 
+                        onChange={e => {
+                          const provider = e.target.value as 'openai' | 'ollama' | 'deepseek' | 'custom';
+                          let updates: any = { aiProvider: provider };
+                          if (provider === 'openai') {
+                            updates.aiBaseUrl = 'https://api.openai.com/v1';
+                            updates.aiModel = 'gpt-4o-mini';
+                          } else if (provider === 'ollama') {
+                            updates.aiBaseUrl = 'http://localhost:11434/v1';
+                            updates.aiModel = 'llama3';
+                          } else if (provider === 'deepseek') {
+                            updates.aiBaseUrl = 'https://api.deepseek.com/v1';
+                            updates.aiModel = 'deepseek-chat';
+                          }
+                          setSettingsForm({...settingsForm, ...updates});
+                        }} 
+                        style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}
+                      >
+                        <option value="openai">OpenAI (ChatGPT)</option>
+                        <option value="ollama">Ollama (Local)</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="custom">Personalizado (LMStudio, Groq, etc)</option>
+                      </select>
                     </div>
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Model:</label>
+                    <div style={{ marginTop: '15px' }}>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Base URL:</label>
+                      <input 
+                        type="text" 
+                        value={settingsForm.aiBaseUrl || ''} 
+                        onChange={e => setSettingsForm({...settingsForm, aiBaseUrl: e.target.value})} 
+                        readOnly={settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek'}
+                        placeholder="https://api.openai.com/v1" 
+                        style={{ width: '100%', padding: '8px', backgroundColor: (settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek') ? 'rgba(0,0,0,0.2)' : 'var(--bg-input)', border: '1px solid var(--border-light)', color: (settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek') ? 'var(--text-muted)' : 'var(--text-main)', borderRadius: '4px' }} 
+                      />
+                    </div>
+                    
+                    {settingsForm.aiProvider !== 'ollama' && (
+                      <div style={{ marginTop: '15px' }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>API Key:</label>
+                        <input type="password" value={settingsForm.aiApiKey || ''} onChange={e => setSettingsForm({...settingsForm, aiApiKey: e.target.value})} placeholder="sk-..." style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: '15px' }}>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Modelo (Model):</label>
                       <input type="text" value={settingsForm.aiModel || ''} onChange={e => setSettingsForm({...settingsForm, aiModel: e.target.value})} placeholder="gpt-4o-mini" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
                     </div>
                   </>
