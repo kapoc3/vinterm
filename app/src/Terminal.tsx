@@ -31,6 +31,7 @@ declare global {
       readSftpFile: (id: string, remotePath: string) => Promise<{ success: boolean, data?: string, message?: string }>;
       writeSftpFile: (id: string, remotePath: string, content: string) => Promise<{ success: boolean, message?: string }>;
       openInLocalEditor: (id: string, remotePath: string, customEditor?: string) => Promise<{ success: boolean, message?: string, localPath?: string }>;
+      mkdir: (id: string, remotePath: string) => Promise<{ success: boolean, message?: string }>;
       vaultEncrypt: (text: string, password: string) => Promise<{ success: boolean, data?: string, message?: string }>;
       vaultDecrypt: (cipherText: string, password: string) => Promise<{ success: boolean, data?: string, message?: string }>;
     };
