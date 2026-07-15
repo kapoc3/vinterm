@@ -1,7 +1,7 @@
 {
   "name": "vinterm",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "VinTerm - La Terminal del Futuro",
   "author": {
     "name": "Kappsco",
@@ -72,8 +72,7 @@
       "category": "Development",
       "target": [
         "AppImage",
-        "deb",
-        "snap"
+        "deb"
       ]
     }
   }
