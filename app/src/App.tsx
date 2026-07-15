@@ -447,7 +447,7 @@ function App() {
                   <li>{t('vaultRules4', settings.language)}</li>
                 </ul>
               </div>
-              <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('createVault', settings.language)}</button>
+              <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('createVault', settings.language)}</button>
             </form>
           )})()}
 
@@ -470,7 +470,7 @@ function App() {
               <div style={{ marginBottom: '15px' }}>
                 <input required autoFocus type="password" placeholder={t("masterPassword", settings.language)} value={masterPassword} onChange={e => { setMasterPassword(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
               </div>
-              <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('unlockVault', settings.language)}</button>
+              <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('unlockVault', settings.language)}</button>
             </form>
           )}
         </div>
@@ -497,7 +497,7 @@ function App() {
           
           <button 
             onClick={addLocal}
-            style={{ width: '100%', padding: '8px', marginBottom: '10px', cursor: 'pointer', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
+            style={{ width: '100%', padding: '8px', marginBottom: '10px', cursor: 'pointer', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
             + Local Terminal
           </button>
           
@@ -658,7 +658,7 @@ function App() {
               
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button type="button" onClick={() => setShowSettingsModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
-                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('saveSettings', settings.language)}</button>
+                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('saveSettings', settings.language)}</button>
               </div>
             </form>
           </div>
@@ -684,7 +684,7 @@ function App() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button type="button" onClick={() => setShowFolderModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
-                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Create</button>
+                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Create</button>
               </div>
             </form>
           </div>
@@ -772,7 +772,7 @@ function App() {
                 </button>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button type="button" onClick={() => setShowSessionModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
-                  <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{editingSessionId ? 'Update' : 'Save'} Session</button>
+                  <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{editingSessionId ? 'Update' : 'Save'} Session</button>
                 </div>
               </div>
             </form>

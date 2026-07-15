@@ -400,10 +400,25 @@ ipcMain.handle('sftp.delete', async (event, id, remotePath, isDirectory) => {
     };
 
     if (isDirectory) {
-      session.client.sftp.rmdir(remotePath, callback);
+      session.sftp.rmdir(remotePath, callback);
     } else {
-      session.client.sftp.unlink(remotePath, callback);
+      session.sftp.unlink(remotePath, callback);
     }
+  });
+});
+
+ipcMain.handle('sftp.mkdir', async (event, id, remotePath) => {
+  return new Promise((resolve) => {
+    const session = sessions.get(id);
+    if (!session || !session.sftp) {
+      return resolve({ success: false, message: 'SFTP not initialized' });
+    }
+    session.sftp.mkdir(remotePath, (err: any) => {
+      if (err) {
+        return resolve({ success: false, message: err.message });
+      }
+      resolve({ success: true });
+    });
   });
 });
 

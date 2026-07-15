@@ -119,9 +119,36 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState('');
   
+  const handleMkdir = async (folderName: string) => {
+    if (!folderName.trim()) return;
+    const targetPath = currentPath.endsWith('/') ? `${currentPath}${folderName.trim()}` : `${currentPath}/${folderName.trim()}`;
+    setIsLoading(true);
+    const res = await window.electronAPI.mkdir(id, targetPath);
+    setIsLoading(false);
+    if (!res.success) {
+      setError(`Mkdir failed: ${res.message}`);
+      setTimeout(() => setError(''), 3000);
+    } else {
+      initAndLoad(currentPath);
+    }
+  };
+  
   // New File State
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
+  
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  const handleNewFolderSubmit = async () => {
+    if (!newFolderName.trim()) {
+      setIsCreatingFolder(false);
+      return;
+    }
+    await handleMkdir(newFolderName.trim());
+    setIsCreatingFolder(false);
+    setNewFolderName('');
+  };
   
   // Renaming State
   const [renamingFile, setRenamingFile] = useState<any>(null);
@@ -252,12 +279,17 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
     
     const remotePath = `${currentPath === '.' || currentPath === '/' ? (currentPath.endsWith('/') ? currentPath : currentPath + '/') : currentPath + '/'}${file.name}`;
     setIsLoading(true);
-    const res = await window.electronAPI.deleteSftpFile(id, remotePath, file.isDirectory);
-    if (!res.success) {
-      alert(`Delete failed: ${res.message}`);
+    try {
+      const res = await window.electronAPI.deleteSftpFile(id, remotePath, file.isDirectory);
+      if (!res.success) {
+        alert(`Delete failed: ${res.message}`);
+      } else {
+        await initAndLoad(currentPath);
+      }
+    } catch (e: any) {
+      alert(`Delete error: ${e.message}`);
+    } finally {
       setIsLoading(false);
-    } else {
-      await initAndLoad(currentPath);
     }
   };
 
@@ -377,7 +409,16 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
         )}
       </div>
       
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div 
+        className="sftp-file-list" 
+        style={{ flex: 1, overflowY: 'auto' }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'DIV' && (e.target as HTMLElement).style.flex === '1') {
+            setContextMenu({ x: e.clientX, y: e.clientY, file: null });
+          }
+        }}
+      >
         {syncStatus && <div style={{ color: '#4caf50', padding: '10px', fontSize: '0.8rem', backgroundColor: 'var(--bg-hover)' }}>✨ {syncStatus}</div>}
         {error && <div style={{ color: '#f48771', padding: '10px' }}>{error}</div>}
         {isLoading && !error && <div style={{ padding: '10px', textAlign: 'center' }}>Loading...</div>}
@@ -385,6 +426,30 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
         {!isLoading && !error && (
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <tbody>
+              {isCreatingFolder && (
+                <tr style={{ borderBottom: '1px solid var(--bg-hover)', backgroundColor: 'var(--bg-editor)' }}>
+                  <td style={{ padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ fontSize: '1.2em', marginRight: '5px' }}>📁</span>
+                    <input 
+                      type="text" 
+                      autoFocus
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleNewFolderSubmit();
+                        if (e.key === 'Escape') setIsCreatingFolder(false);
+                      }}
+                      onBlur={() => setIsCreatingFolder(false)}
+                      placeholder="nombre_carpeta"
+                      style={{ 
+                        flex: 1, backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)', 
+                        border: '1px solid var(--accent)', outline: 'none', padding: '2px 4px' 
+                      }}
+                    />
+                  </td>
+                  <td></td><td></td>
+                </tr>
+              )}
               {isCreatingFile && (
                 <tr style={{ borderBottom: '1px solid var(--bg-hover)', backgroundColor: 'var(--bg-editor)' }}>
                   <td style={{ padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
@@ -420,7 +485,7 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
                 <tr 
                   key={i} 
                   onDoubleClick={() => f.isDirectory ? handleNavigate(f.name) : handleEdit(f)}
-                  onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file: f }); }}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, file: f }); }}
                   style={{ cursor: 'pointer', borderBottom: '1px solid var(--bg-hover)' }}
                 >
                   <td style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
@@ -525,7 +590,9 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
             fontSize: '0.9rem'
           }}
         >
-          <div style={{ padding: '5px 15px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold' }}>
+          {contextMenu.file ? (
+            <>
+              <div style={{ padding: '5px 15px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold' }}>
             {contextMenu.file.name.length > 15 ? contextMenu.file.name.substring(0, 15) + '...' : contextMenu.file.name}
           </div>
           {!contextMenu.file.isDirectory && (
@@ -566,6 +633,21 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
           >
             🗑️ Eliminar
           </div>
+            </>
+          ) : (
+            <div 
+              onClick={() => { 
+                setContextMenu(null); 
+                setIsCreatingFolder(true);
+                setNewFolderName('');
+              }}
+              style={{ padding: '8px 15px', cursor: 'pointer', color: 'var(--text-muted)' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              📁 Crear Carpeta
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -841,7 +923,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
                e.currentTarget.style.backgroundColor = showSftp ? 'var(--bg-input)' : 'var(--accent)';
             }}
           >
-            <VscFolder color={showSftp ? '#aaa' : 'var(--text-main)'} size={20} />
+            <VscFolder color={showSftp ? '#aaa' : 'var(--button-text)'} size={20} />
           </div>
 
           {/* SFTP Content Wrapper */}
@@ -858,7 +940,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
         <div style={{
           height: '24px',
           backgroundColor: 'var(--accent)',
-          color: 'var(--text-main)',
+          color: 'var(--button-text)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',

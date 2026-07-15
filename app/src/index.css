@@ -9,6 +9,7 @@
   --border-light: #444;
   --text-main: #f0f0f0;
   --text-muted: #888;
+  --button-text: #ffffff;
   --accent: #007acc;
   --accent-hover: #0098ff;
   --scrollbar-thumb: #444;
@@ -29,6 +30,7 @@
   --border-light: #bbbbbb;
   --text-main: #222222;
   --text-muted: #666666;
+  --button-text: #ffffff;
   --accent: #007acc;
   --accent-hover: #005a9e;
   --scrollbar-thumb: #bbbbbb;
@@ -39,23 +41,24 @@
 }
 
 [data-theme='vincent'] {
-  --bg-app: #08080c;
-  --bg-panel: rgba(20, 20, 30, 0.4);
-  --bg-editor: rgba(10, 10, 15, 0.6);
-  --bg-input: rgba(255, 255, 255, 0.05);
-  --bg-hover: rgba(255, 255, 255, 0.1);
-  --bg-hover-light: rgba(255, 255, 255, 0.05);
-  --border-color: rgba(255, 255, 255, 0.1);
-  --border-light: rgba(255, 255, 255, 0.15);
-  --text-main: #f0f0f5;
-  --text-muted: #8a8a9a;
+  --bg-app: #000000;
+  --bg-panel: rgba(10, 10, 15, 0.2);
+  --bg-editor: rgba(5, 5, 10, 0.3);
+  --bg-input: rgba(255, 255, 255, 0.03);
+  --bg-hover: rgba(255, 255, 255, 0.15);
+  --bg-hover-light: rgba(255, 255, 255, 0.08);
+  --border-color: rgba(255, 255, 255, 0.25);
+  --border-light: rgba(255, 255, 255, 0.35);
+  --text-main: #ffffff;
+  --text-muted: #b0b0c0;
+  --button-text: #000000;
   --accent: #00ffcc;
-  --accent-hover: #b900ff;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
-  --overlay: rgba(0, 0, 0, 0.7);
-  --error-bg: #631010;
-  --success-bg: #10632a;
+  --accent-hover: #ff00ff;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.6);
+  --overlay: rgba(0, 0, 0, 0.8);
+  --error-bg: #8b0000;
+  --success-bg: #006400;
 }
 
 

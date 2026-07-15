@@ -16,6 +16,12 @@ export default defineConfig({
             }
           }
         }
+      },
+      {
+        entry: 'electron/preload.ts',
+        onstart(options) {
+          options.reload()
+        }
       }
     ]),
   ],

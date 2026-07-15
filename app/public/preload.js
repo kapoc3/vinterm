@@ -30,4 +30,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openInLocalEditor: (id, remotePath, customEditor) => ipcRenderer.invoke('sftp.openInLocalEditor', id, remotePath, customEditor),
   vaultEncrypt: (text, password) => ipcRenderer.invoke('vault.encrypt', text, password),
   vaultDecrypt: (cipherText, password) => ipcRenderer.invoke('vault.decrypt', cipherText, password),
+  mkdir: (id, remotePath) => ipcRenderer.invoke('sftp.mkdir', id, remotePath),
 })
