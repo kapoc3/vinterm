@@ -901,9 +901,12 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
       isInitialized.current = true;
 
     return () => {
+      window.removeEventListener('resize', handleResize);
       if (isInitialized.current) {
         window.electronAPI.closeTerminal(id);
       }
+      term.dispose();
+      isInitialized.current = false;
     };
   }, []);
 

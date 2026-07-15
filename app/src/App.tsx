@@ -428,8 +428,13 @@ function App() {
                 setVaultError(t('vaultError', settings.language));
                 return;
               }
-              const oldSessionsStr = localStorage.getItem('kx_sessions');
-              const sessionsToSave = oldSessionsStr ? JSON.parse(oldSessionsStr) : [];
+              let sessionsToSave = [];
+              try {
+                const oldSessionsStr = localStorage.getItem('kx_sessions');
+                if (oldSessionsStr) sessionsToSave = JSON.parse(oldSessionsStr);
+              } catch (e) {
+                console.error('Failed to parse old sessions:', e);
+              }
               
               const res = await window.electronAPI.vaultEncrypt(JSON.stringify(sessionsToSave), pass);
               if (res.success && res.data) {
@@ -605,7 +610,7 @@ function App() {
       {/* Settings Modal */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'var(--overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--bg-panel)', borderRadius: '8px', width: '650px', height: '450px', border: '1px solid var(--border-color)', display: 'flex', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: 'var(--bg-panel)', borderRadius: '8px', width: '650px', height: 'auto', minHeight: '450px', maxHeight: '90vh', border: '1px solid var(--border-color)', display: 'flex', overflow: 'hidden' }}>
             
             {/* Sidebar Tabs */}
             <div style={{ width: '180px', backgroundColor: 'var(--bg-input)', borderRight: '1px solid var(--border-light)', padding: '20px 0' }}>

@@ -24,9 +24,10 @@ function createWindow() {
     height: 800,
     title: 'Vinterm',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
     }
   })
 
@@ -35,6 +36,11 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+
+  mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+    console.error('PRELOAD ERROR in path:', preloadPath);
+    console.error(error);
+  });
 }
 
 app.whenReady().then(() => {
@@ -108,7 +114,8 @@ const shell = process.env[process.platform === 'win32' ? 'COMSPEC' : 'SHELL'] ||
 ipcMain.on('terminal.spawnLocal', (event, id) => {
   console.log(`[IPC] terminal.spawnLocal received for id: ${id}`);
   try {
-    const ptyProcess = pty.spawn(shell, [], {
+    const args = process.platform === 'win32' ? [] : ['--login'];
+    const ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,
