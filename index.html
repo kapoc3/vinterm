@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="VinTerm - A modern, secure, and elegant SSH client and terminal emulator for professionals.">
+    <title>VinTerm | Modern Secure SSH Client</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    
+    <nav class="navbar">
+        <div class="logo">
+            <span class="logo-icon">🚀</span>
+            <h1>VinTerm</h1>
+        </div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="https://github.com/kapoc3/vinterm/blob/main/docs/ARCHITECTURE.md" target="_blank">Docs</a>
+            <a href="https://github.com/kapoc3/vinterm" target="_blank">GitHub</a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h2 class="hero-title">Terminal Management,<br><span class="accent-text">Reimagined.</span></h2>
+            <p class="hero-subtitle">Experience a next-generation SSH client built for speed, security, and aesthetics. AES-256 encrypted vaults, real-time server telemetry, and integrated SFTP.</p>
+            <div class="hero-cta">
+                <a href="https://github.com/kapoc3/vinterm/releases/latest" id="download-btn" class="btn primary-btn">Download VinTerm</a>
+                <a href="#features" class="btn secondary-btn">Explore Features</a>
+            </div>
+            <p class="os-hint" id="os-hint">Available for macOS, Windows, and Linux.</p>
+        </div>
+        <div class="hero-image-wrapper">
+            <div class="glass-panel">
+                <img src="assets/hero.png" alt="VinTerm Terminal UI Mockup" class="hero-image">
+            </div>
+        </div>
+    </header>
+
+    <section id="features" class="features">
+        <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3>Security Vault</h3>
+            <p>Your passwords and private keys are never stored in plain text. VinTerm uses military-grade AES-256-GCM encryption with a Master Password.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Server Telemetry</h3>
+            <p>Keep an eye on your infrastructure. Real-time CPU, Memory, and Disk usage polling directly integrated into the terminal status bar.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📂</div>
+            <h3>Integrated SFTP</h3>
+            <p>Manage files seamlessly alongside your terminal sessions. Upload, download, delete, and even edit remote files instantly.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🎨</div>
+            <h3>Premium Themes</h3>
+            <p>Beautiful UI built with CSS variables. Switch between elegant Light and Dark modes with a single click, fully synced with the terminal engine.</p>
+        </div>
+    </section>
+
+    <footer>
+        <p>Proudly named in honor of Vicente.</p>
+        <p class="footer-sub">&copy; 2026 Kappsco. Open Source under MIT License.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
