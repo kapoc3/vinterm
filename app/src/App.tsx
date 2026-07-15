@@ -8,7 +8,7 @@ interface TerminalSettings {
   fontSize: number;
   foreground: string;
   background: string;
-  theme?: 'light' | 'dark';
+  theme?: 'light' | 'dark' | 'vincent';
   language?: 'en' | 'es';
 }
 
@@ -609,6 +609,7 @@ function App() {
                 }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}>
                   <option value="dark">{t('darkTheme', settings.language)}</option>
                   <option value="light">{t('lightTheme', settings.language)}</option>
+                  <option value="vincent">{t('vincentTheme', settings.language)}</option>
                 </select>
               </div>
               

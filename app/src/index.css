@@ -38,6 +38,60 @@
   --success-bg: #d4edda;
 }
 
+[data-theme='vincent'] {
+  --bg-app: #08080c;
+  --bg-panel: rgba(20, 20, 30, 0.4);
+  --bg-editor: rgba(10, 10, 15, 0.6);
+  --bg-input: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.1);
+  --bg-hover-light: rgba(255, 255, 255, 0.05);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-light: rgba(255, 255, 255, 0.15);
+  --text-main: #f0f0f5;
+  --text-muted: #8a8a9a;
+  --accent: #00ffcc;
+  --accent-hover: #b900ff;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+  --overlay: rgba(0, 0, 0, 0.7);
+  --error-bg: #631010;
+  --success-bg: #10632a;
+}
+
+
+[data-theme='vincent'] body::before,
+[data-theme='vincent'] body::after {
+  content: '';
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: -1;
+  opacity: 0.4;
+  animation: float 10s infinite alternate ease-in-out;
+}
+
+[data-theme='vincent'] body::before {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+}
+
+[data-theme='vincent'] body::after {
+  bottom: -20%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, var(--accent-hover) 0%, transparent 70%);
+  animation-delay: -5s;
+}
+
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(50px, 30px) scale(1.1); }
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -47,6 +101,10 @@ html, body, #root {
   background-color: var(--bg-app);
   color: var(--text-main);
   overflow: hidden;
+}
+
+[data-theme='vincent'] #root > div {
+  backdrop-filter: blur(15px);
 }
 
 * {
