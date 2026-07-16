@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-07-16
 
 ### Added
+- **Ko-Fi Sponsor Integration**: Added native support buttons across the application sidebar, website, and GitHub repository to collect community tips.
+- **Change Master Password**: New dedicated 'Security' tab in the application settings allowing users to securely validate and re-encrypt their entire vault with a new master password.
+- **Native OS Dialogs**: Replaced generic web alerts during export/import flows with native OS message boxes displaying the VinTerm branding.
 - **Multi-Vault Architecture**: Support for creating, managing, and securely switching between multiple independent vaults.
 - **Vault Hints**: Optional password hint system during vault setup with security validation (prevents using the actual password).
 - **Local Folders Context Menu**: Right-click menus on local folders to quickly rename, delete, or create new sessions.
@@ -17,9 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Error Visuals**: Redesigned UI error messages to use a high-contrast vivid red (`#ff4444`) font style instead of dark backgrounds.
-- **Landing Page Hierarchy**: Reordered landing page features to prioritize Artificial Intelligence and Military-Grade Security over aesthetic features.
+- **Landing Page Hierarchy**: Reordered landing page features to prioritize Artificial Intelligence and Military-Grade Security over aesthetic features, including new 'Zero Trust' and 'Community' cards.
 
 ### Security
+- **Zero Trust - Auto-Lock**: Implemented a strict 15-minute inactivity timer that automatically clears memory constraints and locks the active vault to prevent unauthorized access.
+- **Zero Trust - Folder Encryption**: Migrated plaintext folder structures into the `aes-256-gcm` encryption engine, ensuring directory trees cannot be read at rest.
+- **Zero Trust - Content Security Policy (CSP)**: Injected strict CSP meta tags into the application index to prevent external injection or execution attacks.
 - **Legacy Vault Migration**: Automated logic securely converts single-vault instances into the new, isolated Multi-Vault engine without data loss.
 
 ## [1.0.0] - 2026-07-14
