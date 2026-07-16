@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kapoc3.github.io/vinterm/sitemap.xml
