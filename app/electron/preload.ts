@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFonts: () => ipcRenderer.invoke('system.getFonts'),
   selectFile: () => ipcRenderer.invoke('dialog.selectFile'),
   selectUploadFiles: () => ipcRenderer.invoke('dialog.selectUploadFiles'),
+  saveExportFile: (data: string) => ipcRenderer.invoke('dialog.saveExportFile', data),
+  openImportFile: () => ipcRenderer.invoke('dialog.openImportFile'),
+  showMessageBox: (options: any) => ipcRenderer.invoke('dialog.showMessageBox', options),
   
   // Vault
   vaultEncrypt: (text: string, masterPass: string) => ipcRenderer.invoke('vault.encrypt', text, masterPass),

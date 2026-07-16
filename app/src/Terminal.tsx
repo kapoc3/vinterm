@@ -660,40 +660,225 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
 };
 
 
-const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: boolean, onClose?: () => void, settings: TerminalSettings }) => {
+type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string; };
+
+type ChatSession = {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messages: ChatMessage[];
+};
+
+const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id: string, isActive: boolean, onClose?: () => void, settings: TerminalSettings, getTerminalContext?: () => string }) => {
   const apiKey = settings?.aiApiKey || '';
   const baseUrl = settings?.aiBaseUrl || 'https://api.openai.com/v1';
   const model = settings?.aiModel || 'gpt-4o-mini';
   const provider = settings?.aiProvider || 'openai';
   
   const [prompt, setPrompt] = useState('');
-  const [response, setResponse] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState(model);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  
+  const [autoMode, setAutoMode] = useState(false);
+  const [isAutoLooping, setIsAutoLooping] = useState(false);
+  const isAutoLoopingRef = useRef(false);
+  
+  const [showHistory, setShowHistory] = useState(false);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>('');
 
-  const handleAsk = async () => {
-    if (!prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) return;
+  // Load history on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('vincent_chat_history');
+      if (stored) {
+        setSessions(JSON.parse(stored));
+      }
+    } catch (e) {}
+  }, []);
+
+  // Save history whenever messages change
+  useEffect(() => {
+    if (messages.length === 0) return;
+    
+    setSessions(prev => {
+      let sessionId = currentSessionId;
+      if (!sessionId) {
+        sessionId = Date.now().toString();
+        setCurrentSessionId(sessionId);
+      }
+      
+      const title = messages[0].content.slice(0, 40) + (messages[0].content.length > 40 ? '...' : '');
+      const existingIdx = prev.findIndex(s => s.id === sessionId);
+      
+      let newSessions = [...prev];
+      if (existingIdx >= 0) {
+        newSessions[existingIdx] = { ...newSessions[existingIdx], messages, updatedAt: Date.now() };
+      } else {
+        newSessions.unshift({ id: sessionId, title, updatedAt: Date.now(), messages });
+      }
+      
+      // Sort by newest first
+      newSessions.sort((a, b) => b.updatedAt - a.updatedAt);
+      
+      try {
+        localStorage.setItem('vincent_chat_history', JSON.stringify(newSessions));
+      } catch (e) {}
+      
+      return newSessions;
+    });
+  }, [messages]);
+
+  useEffect(() => {
+    isAutoLoopingRef.current = isAutoLooping;
+  }, [isAutoLooping]);
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSelectedModel(model);
+  }, [model]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    let mounted = true;
+    
+    const fetchModels = async () => {
+      setFetchingModels(true);
+      try {
+        if (provider === 'ollama') {
+          const res = await fetch('http://localhost:11434/api/tags');
+          if (res.ok && mounted) {
+            const data = await res.json();
+            if (data.models) setAvailableModels(data.models.map((m: any) => m.name));
+          }
+        } else {
+          if (!apiKey && provider !== 'custom') return;
+          const headers: any = {};
+          if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+          
+          let url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+          if (url.endsWith('/chat/completions')) url = url.replace('/chat/completions', '');
+          
+          const res = await fetch(`${url}/models`, { headers });
+          if (res.ok && mounted) {
+            const data = await res.json();
+            if (data.data) {
+              const models = data.data.map((m: any) => m.id);
+              const chatModels = models.filter((m: string) => !m.includes('whisper') && !m.includes('tts') && !m.includes('dall-e') && !m.includes('embedding') && !m.includes('babbage') && !m.includes('davinci'));
+              setAvailableModels(chatModels.length > 0 ? chatModels : models);
+            }
+          }
+        }
+      } catch (e) {
+      } finally {
+        if (mounted) setFetchingModels(false);
+      }
+    };
+    
+    if (availableModels.length === 0) fetchModels();
+    return () => { mounted = false; };
+  }, [isActive, provider, baseUrl, apiKey]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const executeCommand = (cmd: string) => {
+    if (cmd) window.electronAPI.sendToTerminal(id, cmd + "\r");
+  };
+
+  const startCommandObserver = () => {
+    if (!getTerminalContext) {
+      setIsAutoLooping(false);
+      return;
+    }
+    
+    let lastContext = getTerminalContext();
+    let unchangedCount = 0;
+    
+    const checkInterval = setInterval(() => {
+      if (!isAutoLoopingRef.current) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      const currentContext = getTerminalContext();
+      if (currentContext !== lastContext) {
+        lastContext = currentContext;
+        unchangedCount = 0;
+      } else {
+        unchangedCount++;
+      }
+      
+      const lines = currentContext.split('\n');
+      const lastLine = lines[lines.length - 1] || '';
+      const looksLikePrompt = /[$#%>]\s*$/.test(lastLine);
+      
+      if (unchangedCount >= 3 && looksLikePrompt) {
+        clearInterval(checkInterval);
+        const followUp = "El comando ha sido ejecutado. Por favor, revisa el nuevo contexto de la terminal. Si la tarea está completada, responde ÚNICAMENTE con [DONE]. Si no, proporciona el siguiente comando bash.";
+        handleAsk(followUp);
+      }
+    }, 500);
+  };
+
+  const handleAsk = async (customPrompt?: string) => {
+    const textToSubmit = customPrompt !== undefined ? customPrompt : prompt.trim();
+    if (!textToSubmit || (provider !== 'ollama' && !apiKey.trim())) return;
+    
+    // Only show manual prompts in UI to avoid cluttering with system follow-ups
+    if (customPrompt === undefined) {
+      setMessages(prev => [...prev, { role: 'user', content: textToSubmit }]);
+      setPrompt('');
+    } else {
+      // Add it to context but format it as a system action
+      setMessages(prev => [...prev, { role: 'system', content: textToSubmit }]);
+    }
+    
     setLoading(true);
     setError('');
-    setResponse('');
     
     try {
-      const headers: any = {
-        'Content-Type': 'application/json'
-      };
-      if (apiKey.trim()) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (apiKey.trim()) headers['Authorization'] = `Bearer ${apiKey}`;
+      
+      let systemPrompt = `Eres Vincent AI, un ingeniero DevOps y SysAdmin Senior de élite experto en servidores Linux, redes y entornos de consola. Tu objetivo es ayudar al usuario a administrar su sistema y resolver problemas con la máxima eficiencia y seguridad.
+
+REGLAS ESTRICTAS:
+1. Responde SIEMPRE con comandos bash listos para ser ejecutados.
+2. Si necesitas dar explicaciones, advertencias o contexto, DEBES escribir esas líneas comentadas (empezando con "#") para que la respuesta completa pueda ser ejecutada en la terminal sin errores de sintaxis.
+3. NUNCA uses bloques de código markdown (\`\`\`) ni comillas invertidas.
+4. PROHIBIDO sugerir comandos interactivos que abran editores o paginadores (nano, vim, vi, less, top). Usa SIEMPRE alternativas no interactivas (echo, cat, tee, sed, awk) para evitar que la terminal se bloquee.
+5. Analiza el contexto de la terminal proporcionado para dar soluciones precisas a los errores.`;
+
+      if (autoMode) {
+        systemPrompt += `\n\nATENCIÓN - ESTÁS EN MODO AUTÓNOMO:\nSi la tarea requiere múltiples comandos, envía SOLO el siguiente comando bash a ejecutar (recuerda la regla de comentar explicaciones). El sistema lo ejecutará automáticamente y te devolverá el nuevo contexto de la terminal.\n\nCUANDO TERMINES LA TAREA (ya sea con éxito o si falló y no puedes continuar): No envíes más comandos. Escribe un ANÁLISIS FINAL (puedes omitir los comentarios "#" para este análisis) resumiendo qué hiciste, si el objetivo se logró o no, y por qué. Finalmente, en la ÚLTIMA LÍNEA de tu mensaje, debes escribir exactamente la palabra [DONE] para detener el agente.`;
       }
+
+      const termContext = getTerminalContext ? getTerminalContext() : '';
+      if (termContext) {
+        systemPrompt += `\n\nHere is the recent context from the user's terminal session to help you understand their environment, recent errors, or context for their query:\n\`\`\`\n${termContext}\n\`\`\``;
+      }
+      
+      // Filter out 'system' role messages for the API request if the provider doesn't support multiple system messages,
+      // but OpenAI does support it or we can map them to 'user'. We will map internal 'system' updates to 'user'.
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({ role: m.role === 'system' ? 'user' : m.role, content: m.content })),
+        { role: 'user', content: textToSubmit }
+      ];
       
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
-          model: model,
-          messages: [
-            { role: 'system', content: 'You are an AI assistant in a terminal. The user will ask how to do something in bash/linux. You must respond ONLY with the raw bash command to execute, with no markdown formatting, no backticks, and no explanations. If you must explain, prefix the explanation with # on a new line.' },
-            { role: 'user', content: prompt }
-          ],
+          model: selectedModel,
+          messages: apiMessages,
           temperature: 0.1
         })
       });
@@ -705,19 +890,57 @@ const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: b
       
       const data = await res.json();
       const content = data.choices[0].message.content;
-      // Strip markdown code blocks if any
-      const cleaned = content.replace(/\^\s*```(bash|sh)?/gm, '').replace(/```\s*\$/gm, '').trim();
-      setResponse(cleaned);
+      const cleaned = content.replace(/^\s*```(bash|sh)?/gm, '').replace(/```\s*$/gm, '').trim();
+      
+      if (autoMode) {
+        if (cleaned.includes('[DONE]')) {
+          const finalAnalysis = cleaned.replace('[DONE]', '').trim();
+          setMessages(prev => [...prev, { role: 'assistant', content: `✅ Tarea autónoma finalizada.\n\n${finalAnalysis}` }]);
+          setIsAutoLooping(false);
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: cleaned }]);
+          setIsAutoLooping(true);
+          executeCommand(cleaned);
+          startCommandObserver();
+        }
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: cleaned }]);
+      }
     } catch (e: any) {
       setError(e.message);
+      setIsAutoLooping(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const insertCommand = () => {
-    if (response) {
-      window.electronAPI.sendToTerminal(id, response);
+  const insertCommand = (cmd: string) => {
+    if (cmd) window.electronAPI.sendToTerminal(id, cmd);
+  };
+
+  const startNewChat = () => {
+    setMessages([]);
+    setError('');
+    setIsAutoLooping(false);
+    setCurrentSessionId('');
+    setShowHistory(false);
+  };
+
+  const loadSession = (session: ChatSession) => {
+    setMessages(session.messages);
+    setCurrentSessionId(session.id);
+    setShowHistory(false);
+  };
+
+  const deleteSession = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const newSessions = sessions.filter(s => s.id !== id);
+    setSessions(newSessions);
+    try {
+      localStorage.setItem('vincent_chat_history', JSON.stringify(newSessions));
+    } catch (err) {}
+    if (currentSessionId === id) {
+      startNewChat();
     }
   };
 
@@ -725,44 +948,153 @@ const AiDrawer = ({ id, isActive, onClose, settings }: { id: string, isActive: b
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', padding: '12px', borderLeft: '1px solid var(--border-light)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--neon-green, #00ff00)' }}>
-          <VscSparkle /> AI Copilot
+          <VscSparkle /> Vincent AI
         </h3>
-        <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={onClose} title="Cerrar"><polyline points="18 15 12 9 6 15"></polyline></SvgIcon>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={() => setShowHistory(!showHistory)} title="Ver Historial">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+          </SvgIcon>
+          <SvgIcon color="var(--text-muted)" hoverColor="var(--neon-green, #00ff00)" onClick={startNewChat} title="Nuevo Chat">
+            <path d="M12 5v14M5 12h14"></path>
+          </SvgIcon>
+          <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={() => { setIsAutoLooping(false); onClose?.(); }} title="Cerrar">
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </SvgIcon>
+        </div>
       </div>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-        <textarea 
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          placeholder="¿Qué quieres hacer? (ej. buscar archivos modificados hoy, comprimir un directorio...)"
-          style={{ height: '80px', width: '100%', resize: 'none', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px', fontFamily: 'inherit' }}
-        />
-        
-        <button 
-          onClick={handleAsk}
-          disabled={loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())}
-          style={{ padding: '8px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '4px', cursor: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 0.5 : 1 }}
-        >
-          {loading ? 'Pensando...' : 'Generar Comando'}
-        </button>
-
-        {error && <div style={{ color: '#ff6b6b', fontSize: '11px', marginTop: '4px' }}>{error}</div>}
-
-        {response && (
-          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sugerencia:</label>
-            <div style={{ padding: '10px', backgroundColor: '#000', border: '1px solid var(--border-color)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
-              {response}
-            </div>
-            <button 
-              onClick={insertCommand}
-              style={{ padding: '6px', backgroundColor: 'var(--bg-input)', color: '#fff', border: '1px solid var(--neon-green, #00ff00)', borderRadius: '4px', cursor: 'pointer' }}
-            >
-              Insertar en Terminal
-            </button>
+      
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: '8px' }}>
+        {showHistory ? (
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', color: 'var(--text-muted)' }}>Historial de Conversaciones</h4>
+            {sessions.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '11px', textAlign: 'center', marginTop: '20px' }}>
+                No hay historial guardado.
+              </div>
+            )}
+            {sessions.map(session => (
+              <div 
+                key={session.id} 
+                onClick={() => loadSession(session)}
+                style={{ 
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px', backgroundColor: currentSessionId === session.id ? 'var(--accent)' : 'var(--bg-input)', 
+                  border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' 
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
+                  <span style={{ fontSize: '11px', color: currentSessionId === session.id ? '#fff' : 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {session.title || 'Nueva conversación'}
+                  </span>
+                  <span style={{ fontSize: '9px', color: currentSessionId === session.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
+                    {new Date(session.updatedAt).toLocaleString()}
+                  </span>
+                </div>
+                <button 
+                  onClick={(e) => deleteSession(e, session.id)}
+                  style={{ background: 'none', border: 'none', color: '#f48771', cursor: 'pointer', padding: '4px' }}
+                  title="Eliminar chat"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+              </div>
+            ))}
           </div>
+        ) : (
+          <>
+            {/* Chat History */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+              {messages.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px', textAlign: 'center', marginTop: '20px' }}>
+                  Sin historial en esta sesión. ¿En qué te ayudo?
+                </div>
+              )}
+              {messages.map((msg, i) => (
+                <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : (msg.role === 'system' ? 'center' : 'flex-start'), maxWidth: msg.role === 'system' ? '100%' : '90%' }}>
+                  <div style={{ 
+                    padding: msg.role === 'system' ? '4px 8px' : '8px', 
+                    backgroundColor: msg.role === 'user' ? 'var(--accent)' : (msg.role === 'system' ? 'transparent' : '#000'), 
+                    color: msg.role === 'user' ? 'var(--button-text)' : (msg.role === 'system' ? 'var(--text-muted)' : (msg.content.includes('✅') ? '#00e5ff' : 'var(--neon-green, #00ff00)')),
+                    border: msg.role === 'assistant' ? (msg.content.includes('✅') ? '1px solid #00e5ff' : '1px solid var(--border-color)') : 'none',
+                    borderRadius: '4px', fontSize: msg.role === 'system' ? '10px' : '12px', 
+                    fontStyle: msg.role === 'system' ? 'italic' : 'normal',
+                    fontFamily: msg.role === 'assistant' ? (msg.content.includes('✅') ? 'inherit' : 'monospace') : 'inherit',
+                    wordBreak: 'break-word', whiteSpace: 'pre-wrap' 
+                  }}>
+                    {msg.content}
+                  </div>
+                  {msg.role === 'assistant' && !msg.content.includes('✅') && !autoMode && (
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                      <button onClick={() => insertCommand(msg.content)} style={{ flex: 1, padding: '4px', fontSize: '10px', backgroundColor: 'var(--bg-input)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '2px', cursor: 'pointer' }}>Insertar</button>
+                      <button onClick={() => executeCommand(msg.content)} style={{ flex: 1, padding: '4px', fontSize: '10px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '2px', cursor: 'pointer', fontWeight: 'bold' }}>Ejecutar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {loading && <div style={{ alignSelf: 'flex-start', fontSize: '11px', color: 'var(--text-muted)' }}>Pensando...</div>}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Box and Settings */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {isAutoLooping && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 255, 0, 0.1)', border: '1px solid var(--neon-green, #00ff00)', padding: '6px 8px', borderRadius: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--neon-green, #00ff00)', animation: 'pulse 1.5s infinite' }}>Agente trabajando...</span>
+                  <button onClick={() => setIsAutoLooping(false)} style={{ padding: '2px 8px', backgroundColor: '#f48771', color: '#000', border: 'none', borderRadius: '2px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}>DETENER</button>
+                </div>
+              )}
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <span>Modelo:</span>
+                  {availableModels.length > 0 ? (
+                    <select 
+                      value={selectedModel} 
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      style={{ 
+                        backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-color)', 
+                        borderRadius: '4px', fontSize: '10px', padding: '2px', outline: 'none', maxWidth: '100px'
+                      }}
+                    >
+                      {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  ) : (
+                    <strong style={{ color: 'var(--text-main)' }}>{fetchingModels ? 'Cargando...' : selectedModel}</strong>
+                  )}
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: autoMode ? 'var(--neon-green, #00ff00)' : 'var(--text-muted)' }}>
+                  <input type="checkbox" checked={autoMode} onChange={e => { setAutoMode(e.target.checked); if(!e.target.checked) setIsAutoLooping(false); }} style={{ margin: 0, cursor: 'pointer' }} />
+                  Auto-run
+                </label>
+              </div>
+              
+              {error && <div style={{ color: '#ff6b6b', fontSize: '11px' }}>{error}</div>}
+              <div style={{ position: 'relative' }}>
+                <textarea 
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAsk();
+                    }
+                  }}
+                  disabled={loading || (provider !== 'ollama' && !apiKey.trim())}
+                  placeholder="Escribe tu consulta y presiona Enter..."
+                  style={{ height: '60px', width: '100%', resize: 'none', padding: '8px', paddingRight: '40px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', fontSize: '12px', fontFamily: 'inherit' }}
+                />
+                <button 
+                  onClick={() => handleAsk()}
+                  disabled={loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())}
+                  style={{ position: 'absolute', right: '4px', bottom: '8px', padding: '4px 8px', backgroundColor: 'transparent', color: 'var(--neon-green, #00ff00)', border: 'none', cursor: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 'not-allowed' : 'pointer', opacity: (loading || !prompt.trim() || (provider !== 'ollama' && !apiKey.trim())) ? 0.3 : 1 }}
+                  title="Enviar"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -843,6 +1175,24 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
     return color;
   };
 
+  const getTerminalContext = () => {
+    if (!xtermRef.current) return '';
+    const buffer = xtermRef.current.buffer.active;
+    const lines = [];
+    const maxLines = 100;
+    const startLine = Math.max(0, buffer.length - maxLines);
+    for (let i = startLine; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        lines.push(line.translateToString(true));
+      }
+    }
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    return lines.join('\n');
+  };
+
   useEffect(() => {
     if (!terminalRef.current || isInitialized.current) return;
 
@@ -911,14 +1261,23 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
   }, []);
 
   useEffect(() => {
-    if (isActive && fitAddonRef.current) {
-      setTimeout(() => {
+    if (!terminalRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (isActive && fitAddonRef.current && isInitialized.current) {
         try {
-          fitAddonRef.current?.fit();
+          fitAddonRef.current.fit();
+          if (xtermRef.current) {
+            window.electronAPI.resizeTerminal(id, xtermRef.current.cols, xtermRef.current.rows);
+          }
         } catch (e) {}
-      }, 50);
-    }
-  }, [isActive]);
+      }
+    });
+
+    resizeObserver.observe(terminalRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [isActive, id]);
 
   useEffect(() => {
     if (xtermRef.current && isInitialized.current) {
@@ -976,15 +1335,15 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
           <div ref={terminalRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />
         </div>
 
-        {/* SFTP Collapsible Drawer */}
+        {/* Sidebar Collapsible Drawer */}
         <div style={{
           position: 'relative',
-          width: showSftp ? `${sftpWidth}px` : '0px',
+          width: (showSftp || showAi) ? `${sftpWidth}px` : '0px',
           height: '100%',
           zIndex: 50,
           transition: isResizing ? 'none' : 'width 0.2s ease-in-out',
           backgroundColor: 'var(--bg-panel)',
-          borderLeft: showSftp ? '1px solid var(--border-color)' : 'none',
+          borderLeft: (showSftp || showAi) ? '1px solid var(--border-color)' : 'none',
           flexShrink: 0
         }}>
           
@@ -996,13 +1355,13 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
               left: '-3px',
               width: '6px',
               height: '100%',
-              cursor: showSftp ? 'col-resize' : 'default',
+              cursor: (showSftp || showAi) ? 'col-resize' : 'default',
               backgroundColor: isResizing ? 'var(--accent)' : 'transparent',
               transition: 'background-color 0.2s',
               zIndex: 60,
             }}
             onMouseDown={(e) => {
-              if (showSftp) {
+              if (showSftp || showAi) {
                 e.preventDefault();
                 setIsResizing(true);
               }
@@ -1011,33 +1370,40 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
 
           {/* Solapa / Tab */}
           <div
-            onClick={() => setShowSftp(!showSftp)}
-            title="Explorador de Archivos (SFTP)"
+            onClick={() => {
+              if (type === 'ssh') {
+                setShowSftp(!showSftp);
+                if (!showSftp) setShowAi(false);
+              }
+            }}
+            title={type === 'ssh' ? "Explorador de Archivos (SFTP)" : "SFTP solo disponible en conexiones remotas"}
             style={{
               position: 'absolute',
               top: '20px',
               left: '-38px',
               width: '38px',
-              backgroundColor: showSftp ? 'var(--bg-input)' : 'var(--accent)',
+              backgroundColor: showSftp ? 'var(--bg-input)' : (type === 'ssh' ? 'var(--accent)' : 'var(--bg-panel)'),
               color: 'var(--text-main)',
               border: '1px solid var(--border-light)',
-              borderRight: showSftp ? 'none' : '1px solid var(--accent)',
+              borderRight: showSftp ? 'none' : (type === 'ssh' ? '1px solid var(--accent)' : '1px solid var(--border-light)'),
               borderRadius: '4px 0 0 4px',
               padding: '12px 0px',
-              cursor: 'pointer',
+              cursor: type === 'ssh' ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '-2px 2px 10px rgba(0,0,0,0.4)',
-              opacity: showSftp ? 0.8 : 1,
+              boxShadow: type === 'ssh' ? '-2px 2px 10px rgba(0,0,0,0.4)' : 'none',
+              opacity: type === 'ssh' ? (showSftp ? 0.8 : 1) : 0.5,
               transition: 'all 0.2s ease',
               zIndex: 61,
             }}
             onMouseEnter={(e) => {
+               if (type !== 'ssh') return;
                e.currentTarget.style.opacity = '1';
                e.currentTarget.style.backgroundColor = showSftp ? 'var(--border-color)' : '#0098ff';
             }}
             onMouseLeave={(e) => {
+               if (type !== 'ssh') return;
                e.currentTarget.style.opacity = showSftp ? '0.8' : '1';
                e.currentTarget.style.backgroundColor = showSftp ? 'var(--bg-input)' : 'var(--accent)';
             }}
@@ -1045,14 +1411,49 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
             <VscFolder color={showSftp ? '#aaa' : 'var(--button-text)'} size={20} />
           </div>
 
-          {/* SFTP Content Wrapper */}
+          {/* AI Tab */}
+          <div
+            onClick={() => {
+              setShowAi(!showAi);
+              if (!showAi) setShowSftp(false);
+            }}
+            title="Vincent AI"
+            style={{
+              position: 'absolute',
+              top: '65px',
+              left: '-38px',
+              width: '38px',
+              backgroundColor: showAi ? 'var(--bg-input)' : 'var(--accent)',
+              color: 'var(--text-main)',
+              border: '1px solid var(--border-light)',
+              borderRight: showAi ? 'none' : '1px solid var(--accent)',
+              borderRadius: '4px 0 0 4px',
+              padding: '12px 0px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '-2px 2px 10px rgba(0,0,0,0.4)',
+              opacity: showAi ? 0.8 : 1,
+              transition: 'all 0.2s ease',
+              zIndex: 61,
+            }}
+            onMouseEnter={(e) => {
+               e.currentTarget.style.opacity = '1';
+               e.currentTarget.style.backgroundColor = showAi ? 'var(--border-color)' : '#0098ff';
+            }}
+            onMouseLeave={(e) => {
+               e.currentTarget.style.opacity = showAi ? '0.8' : '1';
+               e.currentTarget.style.backgroundColor = showAi ? 'var(--bg-input)' : 'var(--accent)';
+            }}
+          >
+            <VscSparkle color={showAi ? '#aaa' : 'var(--button-text)'} size={20} />
+          </div>
+
+          {/* Sidebar Content Wrapper */}
           <div style={{ width: (showSftp || showAi) ? `${sftpWidth}px` : '0px', borderLeft: (showSftp || showAi) ? '1px solid var(--border-light)' : 'none', height: '100%', overflow: 'hidden' }}>
-            {type === 'ssh' && (
-              <>
-                {showSftp && <SftpViewer id={id} isActive={showSftp && isActive} onClose={() => setShowSftp(false)} />}
-                {showAi && <AiDrawer id={id} isActive={showAi && isActive} onClose={() => setShowAi(false)} settings={settings} />}
-              </>
-            )}
+            {type === 'ssh' && showSftp && <SftpViewer id={id} isActive={showSftp && isActive} onClose={() => setShowSftp(false)} />}
+            <AiDrawer id={id} isActive={showAi && isActive} onClose={() => setShowAi(false)} settings={settings} getTerminalContext={getTerminalContext} />
           </div>
         </div>
       </div>

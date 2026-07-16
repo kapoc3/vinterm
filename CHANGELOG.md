@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-16
+
+### Added
+- **Multi-Vault Architecture**: Support for creating, managing, and securely switching between multiple independent vaults.
+- **Vault Hints**: Optional password hint system during vault setup with security validation (prevents using the actual password).
+- **Local Folders Context Menu**: Right-click menus on local folders to quickly rename, delete, or create new sessions.
+- **Dynamic Screenshot Gallery**: A fully responsive, interactive carousel implemented on the landing page to showcase the application.
+- **Comprehensive i18n Support**: Spanish and English translations extended to all UI error messages, tooltips, and SSH connection validations.
+- **Vincent AI**: The 'AI Copilot' feature has been fully integrated and officially rebranded as 'Vincent AI' across the platform.
+
+### Changed
+- **Error Visuals**: Redesigned UI error messages to use a high-contrast vivid red (`#ff4444`) font style instead of dark backgrounds.
+- **Landing Page Hierarchy**: Reordered landing page features to prioritize Artificial Intelligence and Military-Grade Security over aesthetic features.
+
+### Security
+- **Legacy Vault Migration**: Automated logic securely converts single-vault instances into the new, isolated Multi-Vault engine without data loss.
+
 ## [1.0.0] - 2026-07-14
 
 ### Added

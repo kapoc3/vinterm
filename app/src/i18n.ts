@@ -6,6 +6,14 @@ export const translations = {
     vaultWelcome: 'Welcome to VinTerm! To protect your SSH passwords and private keys, please create a secure Master Password.',
     vaultError: 'Must be 6-12 chars, 1 uppercase, 1 number, 1 symbol (!@#$%^&*)',
     vaultFailed: 'Failed to setup vault',
+    vaultName: 'Vault Name',
+    vaultHint: 'Password Hint (Optional)',
+    vaultHintLabel: 'Hint: ',
+    vaultAutoLocked: 'Vault locked due to 15 minutes of inactivity.',
+    selectVault: 'Select Vault',
+    createNewVault: 'Create New Vault',
+    vaultHintMatchError: 'The password hint cannot be the same as the password.',
+    switchVault: 'Switch Vault',
     masterPassword: 'Master Password',
     vaultRules1: '6 to 12 characters',
     vaultRules2: 'At least 1 uppercase letter',
@@ -16,12 +24,36 @@ export const translations = {
     vaultInvalidPass: 'Invalid Master Password',
     unlockVault: 'Unlock Vault',
     vaultCorrupted: 'Vault data corrupted or missing',
+    vaultPasswordsMismatch: 'Passwords do not match',
+    vaultConfirmPass: 'Confirm master password',
+    vaultShowHide: 'Show/Hide',
     
     // Sidebar
     sessions: 'Sessions',
     newFolder: 'New Folder',
     newSession: 'New Session',
     localTerminal: '🖥️ Local Terminal',
+    
+    settings: 'Settings',
+    appearance: 'Appearance',
+    language: 'Language',
+    aiSettings: 'AI Settings',
+    securityTab: 'Security',
+    dataTab: 'Data',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeVincent: 'Vincent (Neon)',
+    saveChanges: 'Save Changes',
+    
+    // Change Password
+    changePasswordTitle: 'Change Vault Password',
+    currentPassword: 'Current Master Password',
+    newPassword: 'New Master Password',
+    confirmNewPassword: 'Confirm New Password',
+    changePasswordBtn: 'Change Password',
+    passwordChangedSuccess: 'Password changed successfully!',
+    wrongCurrentPassword: 'The current password you entered is incorrect.',
+    passwordsDoNotMatch: 'New passwords do not match.',
     
     // Settings
     settingsTitle: 'Terminal Settings',
@@ -30,7 +62,6 @@ export const translations = {
     darkTheme: 'Dark Theme',
     lightTheme: 'Light Theme',
     vincentTheme: 'Vincent Theme (Neon Glass)',
-    language: 'Language',
     fontFamily: 'Font Family',
     terminalBg: 'Terminal Background',
     terminalFg: 'Terminal Foreground',
@@ -61,6 +92,7 @@ export const translations = {
     testFailed: 'Test Failed',
     saveSession: 'Save Session',
     updateSession: 'Update Session',
+    hostRequired: 'Host and Username are required to test.',
     
     // Terminal & SFTP
     sftpPanel: 'SFTP Panel',
@@ -76,20 +108,26 @@ export const translations = {
     edit: 'Edit (Local)',
     rename: 'Rename',
     download: 'Download',
-    delete: 'Delete',
-    
-    // Confirmations
-    confirmDeleteFolder: 'Are you sure you want to delete this folder and all its contents?',
+    confirmDeleteFolder: 'Are you sure you want to delete this folder and ALL its contents?',
+    promptRenameFolder: 'Rename folder to:',
     confirmDeleteSession: 'Are you sure you want to delete this session?',
     confirmDeleteFile: 'Are you sure you want to delete this file/folder?'
   },
   es: {
     // Vault
-    vaultTitle: '🔒 Bóveda de Seguridad VinTerm',
+    vaultTitle: '🔒 Bóveda de Seguridad',
     vaultChecking: 'Comprobando estado de la bóveda...',
-    vaultWelcome: '¡Bienvenido a VinTerm! Para proteger tus contraseñas SSH y llaves privadas, crea una Contraseña Maestra segura.',
+    vaultWelcome: 'Bienvenido, por favor configura tu bóveda.',
     vaultError: 'Debe tener 6-12 caracteres, 1 mayúscula, 1 número, 1 símbolo (!@#$%^&*)',
     vaultFailed: 'Error al configurar la bóveda',
+    vaultName: 'Nombre de la Bóveda',
+    vaultHint: 'Palabra Clave (Pista)',
+    vaultHintLabel: 'Pista: ',
+    vaultAutoLocked: 'Bóveda bloqueada por 15 minutos de inactividad.',
+    selectVault: 'Seleccione Bóveda',
+    createNewVault: 'Crear Nueva Bóveda',
+    vaultHintMatchError: 'La palabra clave no puede ser igual a la contraseña.',
+    switchVault: 'Cambiar de Bóveda',
     masterPassword: 'Contraseña Maestra',
     vaultRules1: 'De 6 a 12 caracteres',
     vaultRules2: 'Al menos 1 letra mayúscula',
@@ -100,12 +138,36 @@ export const translations = {
     vaultInvalidPass: 'Contraseña Maestra incorrecta',
     unlockVault: 'Desbloquear Bóveda',
     vaultCorrupted: 'Datos de la bóveda corruptos o faltantes',
+    vaultPasswordsMismatch: 'Las contraseñas no coinciden',
+    vaultConfirmPass: 'Confirmar contraseña maestra',
+    vaultShowHide: 'Mostrar/Ocultar',
     
     // Sidebar
     sessions: 'Sesiones',
     newFolder: 'Nueva Carpeta',
     newSession: 'Nueva Sesión',
     localTerminal: '🖥️ Terminal Local',
+    
+    settings: 'Ajustes',
+    appearance: 'Apariencia',
+    language: 'Idioma',
+    aiSettings: 'Ajustes de IA',
+    securityTab: 'Seguridad',
+    dataTab: 'Datos',
+    themeLight: 'Claro',
+    themeDark: 'Oscuro',
+    themeVincent: 'Vincent (Neón)',
+    saveChanges: 'Guardar Cambios',
+    
+    // Change Password
+    changePasswordTitle: 'Cambiar Contraseña de Bóveda',
+    currentPassword: 'Contraseña Actual',
+    newPassword: 'Nueva Contraseña',
+    confirmNewPassword: 'Confirmar Nueva Contraseña',
+    changePasswordBtn: 'Cambiar Contraseña',
+    passwordChangedSuccess: '¡Contraseña cambiada exitosamente!',
+    wrongCurrentPassword: 'La contraseña actual ingresada es incorrecta.',
+    passwordsDoNotMatch: 'Las contraseñas nuevas no coinciden.',
     
     // Settings
     settingsTitle: 'Ajustes de Terminal',
@@ -114,7 +176,7 @@ export const translations = {
     darkTheme: 'Tema Oscuro',
     lightTheme: 'Tema Claro',
     vincentTheme: 'Tema Vicente (Cristal Neón)',
-    language: 'Idioma (Language)',
+    language: 'Idioma',
     fontFamily: 'Tipo de Letra',
     terminalBg: 'Fondo de Terminal',
     terminalFg: 'Letra de Terminal',
@@ -142,9 +204,10 @@ export const translations = {
     testConnection: 'Probar Conexión',
     testing: 'Probando...',
     testSuccess: 'Conexión Exitosa',
-    testFailed: 'Conexión Fallida',
+    testFailed: 'Prueba Fallida',
     saveSession: 'Guardar Sesión',
     updateSession: 'Actualizar Sesión',
+    hostRequired: 'El Host y el Usuario son requeridos para probar.',
     
     // Terminal & SFTP
     sftpPanel: 'Panel SFTP',
@@ -160,10 +223,8 @@ export const translations = {
     edit: 'Editar (Local)',
     rename: 'Renombrar',
     download: 'Descargar',
-    delete: 'Eliminar',
-    
-    // Confirmations
-    confirmDeleteFolder: '¿Estás seguro que deseas eliminar esta carpeta y todo su contenido?',
+    confirmDeleteFolder: '¿Estás seguro de eliminar esta carpeta y TODO su contenido?',
+    promptRenameFolder: 'Renombrar carpeta a:',
     confirmDeleteSession: '¿Estás seguro que deseas eliminar esta sesión?',
     confirmDeleteFile: '¿Estás seguro que deseas eliminar este archivo/carpeta?'
   }

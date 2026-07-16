@@ -16,6 +16,7 @@
   --scrollbar-thumb-hover: #666;
   --overlay: rgba(0,0,0,0.5);
   --error-bg: #4d1b1b;
+  --error-text: #ff4444;
   --success-bg: #1b4d2e;
 }
 
@@ -37,6 +38,7 @@
   --scrollbar-thumb-hover: #999999;
   --overlay: rgba(255,255,255,0.7);
   --error-bg: #f8d7da;
+  --error-text: #e60000;
   --success-bg: #d4edda;
 }
 
@@ -58,6 +60,7 @@
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.6);
   --overlay: rgba(0, 0, 0, 0.8);
   --error-bg: #8b0000;
+  --error-text: #ff3333;
   --success-bg: #006400;
 }
 

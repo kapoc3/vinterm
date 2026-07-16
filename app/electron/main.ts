@@ -23,6 +23,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     title: 'Vinterm',
+    icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/vinterm.png' : '../dist/vinterm.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -30,6 +31,10 @@ function createWindow() {
       sandbox: false,
     }
   })
+
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/vinterm.png' : '../dist/vinterm.png'))
+  }
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -292,6 +297,59 @@ ipcMain.handle('dialog.selectUploadFiles', async () => {
     return null;
   }
   return result.filePaths;
+});
+
+ipcMain.handle('dialog.saveExportFile', async (event, data: string) => {
+  if (!mainWindow) return { success: false, message: 'No main window' };
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Settings',
+    defaultPath: 'vinterm_export.enc',
+    filters: [
+      { name: 'VinTerm Export', extensions: ['enc', 'vinterm'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  
+  if (canceled || !filePath) return { success: false, message: 'Canceled' };
+  
+  try {
+    fs.writeFileSync(filePath, data, 'utf-8');
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+ipcMain.handle('dialog.showMessageBox', async (event, options: any) => {
+  if (!mainWindow) return;
+  const iconPath = path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/vinterm.png' : '../dist/vinterm.png');
+  await dialog.showMessageBox(mainWindow, {
+    ...options,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined
+  });
+});
+
+
+ipcMain.handle('dialog.openImportFile', async () => {
+  if (!mainWindow) return { success: false, message: 'No main window' };
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'showHiddenFiles'],
+    title: 'Import Settings',
+    filters: [
+      { name: 'Supported Exports', extensions: ['enc', 'vinterm', 'mxtsessions'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, message: 'Canceled' };
+  }
+  
+  try {
+    const data = fs.readFileSync(result.filePaths[0], 'utf-8');
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
 });
 
 ipcMain.handle('system.getFonts', async () => {

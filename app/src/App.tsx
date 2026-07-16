@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { t } from './i18n'
 import { TerminalComponent } from './Terminal'
 import './App.css'
@@ -20,7 +20,13 @@ interface Folder {
   id: string;
   name: string;
   parentId: string | null;
-  isOpen?: boolean;
+  isOpen: boolean;
+}
+
+interface VaultInfo {
+  id: string;
+  name: string;
+  hint: string;
 }
 
 interface SavedSession {
@@ -58,24 +64,50 @@ const defaultSettings: TerminalSettings = {
 
 function App() {
   
-  const [vaultStatus, setVaultStatus] = useState<'checking' | 'setup' | 'locked' | 'unlocked'>('checking');
+  const [vaultStatus, setVaultStatus] = useState<'checking' | 'selecting' | 'setup' | 'locked' | 'unlocked'>('checking');
+  const [vaultsList, setVaultsList] = useState<VaultInfo[]>([]);
+  const [currentVaultId, setCurrentVaultId] = useState<string | null>(null);
+  
   const [masterPassword, setMasterPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showVaultPassword, setShowVaultPassword] = useState(false);
   const [vaultError, setVaultError] = useState('');
 
+  const [newVaultName, setNewVaultName] = useState('');
+  const [newVaultHint, setNewVaultHint] = useState('');
+
   useEffect(() => {
-    const setup = localStorage.getItem('kx_vault_setup');
-    if (!setup) setVaultStatus('setup');
-    else setVaultStatus('locked');
+    const vaultsIndexStr = localStorage.getItem('kx_vaults_index');
+    if (vaultsIndexStr) {
+      const vaults = JSON.parse(vaultsIndexStr);
+      setVaultsList(vaults);
+      setVaultStatus('selecting');
+    } else {
+      const setup = localStorage.getItem('kx_vault_setup');
+      if (setup === 'true') {
+        const legacyVault: VaultInfo = { id: 'default', name: 'Default Vault', hint: 'Migrated from legacy version.' };
+        const newIndex = [legacyVault];
+        localStorage.setItem('kx_vaults_index', JSON.stringify(newIndex));
+        
+        const oldData = localStorage.getItem('kx_vault_data');
+        if (oldData) localStorage.setItem('kx_vault_data_default', oldData);
+        
+        const oldFolders = localStorage.getItem('kx_folders');
+        if (oldFolders) localStorage.setItem('kx_folders_default', oldFolders);
+        
+        setVaultsList(newIndex);
+        setVaultStatus('selecting');
+      } else {
+        setVaultStatus('setup');
+      }
+    }
   }, []);
 
   const [tabs, setTabs] = useState<Tab[]>([{ id: 'tab-1', type: 'local', title: t('localTerminal', defaultSettings.language) }])
   const [activeTab, setActiveTab] = useState('tab-1')
   
   // Persisted state
-  const [folders, setFolders] = useState<Folder[]>(() => {
-    const saved = localStorage.getItem('kx_folders');
-    return saved ? JSON.parse(saved).map((f: any) => ({ ...f, parentId: f.parentId || null })) : [];
-  })
+  const [folders, setFolders] = useState<Folder[]>([])
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([])
   const [settings, setSettings] = useState<TerminalSettings>(() => {
     const saved = localStorage.getItem('kx_settings');
@@ -83,18 +115,53 @@ function App() {
   })
 
   useEffect(() => {
-    localStorage.setItem('kx_folders', JSON.stringify(folders));
-  }, [folders])
-
-  useEffect(() => {
-    if (vaultStatus === 'unlocked' && masterPassword) {
-      window.electronAPI.vaultEncrypt(JSON.stringify(savedSessions), masterPassword).then(res => {
+    if (vaultStatus === 'unlocked' && masterPassword && currentVaultId) {
+      window.electronAPI.vaultEncrypt(JSON.stringify(folders), masterPassword).then(res => {
         if (res.success && res.data) {
-          localStorage.setItem('kx_vault_data', res.data);
+          localStorage.setItem(`kx_folders_${currentVaultId}`, res.data);
         }
       });
     }
-  }, [savedSessions])
+  }, [folders, vaultStatus, masterPassword, currentVaultId])
+
+  // Auto-lock feature
+  const autoLockTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const resetAutoLock = useCallback(() => {
+    if (autoLockTimer.current) clearTimeout(autoLockTimer.current);
+    if (vaultStatus === 'unlocked') {
+      autoLockTimer.current = setTimeout(() => {
+        setVaultStatus('locked');
+        setMasterPassword('');
+        setSavedSessions([]);
+        setFolders([]);
+        setVaultError(t('vaultAutoLocked', settings.language) || 'Vault locked due to inactivity');
+      }, 15 * 60 * 1000); // 15 minutes
+    }
+  }, [vaultStatus, settings.language]);
+
+  useEffect(() => {
+    const events = ['mousemove', 'keydown', 'click', 'scroll'];
+    const handleActivity = () => resetAutoLock();
+    
+    events.forEach(e => window.addEventListener(e, handleActivity));
+    resetAutoLock(); // init
+    
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handleActivity));
+      if (autoLockTimer.current) clearTimeout(autoLockTimer.current);
+    }
+  }, [resetAutoLock]);
+
+  useEffect(() => {
+    if (vaultStatus === 'unlocked' && masterPassword && currentVaultId) {
+      window.electronAPI.vaultEncrypt(JSON.stringify(savedSessions), masterPassword).then(res => {
+        if (res.success && res.data) {
+          localStorage.setItem(`kx_vault_data_${currentVaultId}`, res.data);
+        }
+      });
+    }
+  }, [savedSessions, vaultStatus, masterPassword, currentVaultId])
 
   useEffect(() => {
     localStorage.setItem('kx_settings', JSON.stringify(settings));
@@ -106,6 +173,10 @@ function App() {
   const [showFolderModal, setShowFolderModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   
+  const [showRenameModal, setShowRenameModal] = useState(false)
+  const [renameFolderId, setRenameFolderId] = useState<string | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState('')
+
   const [folderForm, setFolderForm] = useState({ name: '', parentId: '' })
   const [sshForm, setSshForm] = useState({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false })
   const [settingsForm, setSettingsForm] = useState<TerminalSettings>(settings)
@@ -116,10 +187,29 @@ function App() {
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, targetId: string, type: 'session' | 'folder' } | null>(null);
+
+  const [passwordPrompt, setPasswordPrompt] = useState<{
+    isOpen: boolean;
+    type: 'export' | 'import';
+    resolve: (password: string | null) => void;
+  } | null>(null);
+
+  const requestPassword = (type: 'export' | 'import'): Promise<string | null> => {
+    return new Promise(resolve => {
+      setPasswordPrompt({ isOpen: true, type, resolve });
+    });
+  };
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
+
+  // Settings - Password change
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState<'idle'|'error'|'success'>('idle');
+  const [passwordChangeMsg, setPasswordChangeMsg] = useState('');
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -192,6 +282,229 @@ function App() {
     setShowSettingsModal(false)
   }
 
+  const handleExport = async () => {
+    try {
+      const password = await requestPassword('export');
+      if (!password) return;
+      
+      const exportData = {
+        format: 'vinterm',
+        version: 1,
+        data: {
+          sessions: localStorage.getItem('kx_sessions'),
+          folders: localStorage.getItem('kx_folders'),
+          settings: localStorage.getItem('kx_settings')
+        }
+      };
+      
+      if (typeof (window as any).electronAPI.saveExportFile !== 'function') {
+        (window as any).electronAPI.showMessageBox({
+          type: 'error',
+          title: 'VinTerm',
+          message: settings.language === 'es' ? "Por favor reinicia la aplicación (cierra y vuelve a abrir) para aplicar los cambios del sistema de archivos." : "Please restart the application to apply file system changes."
+        });
+        return;
+      }
+
+      const res = await (window as any).electronAPI.vaultEncrypt(JSON.stringify(exportData), password);
+      if (res.success && res.data) {
+        const saveRes = await (window as any).electronAPI.saveExportFile(res.data);
+        if (saveRes.success) {
+          (window as any).electronAPI.showMessageBox({
+            type: 'info',
+            title: 'VinTerm',
+            message: settings.language === 'es' ? "Exportación completada." : "Export successful!"
+          });
+        } else {
+          if (saveRes.message !== 'Canceled') {
+            (window as any).electronAPI.showMessageBox({
+              type: 'error',
+              title: 'VinTerm Error',
+              message: "Error: " + saveRes.message
+            });
+          }
+        }
+      } else {
+        (window as any).electronAPI.showMessageBox({
+          type: 'error',
+          title: 'VinTerm Error',
+          message: settings.language === 'es' ? "Fallo en cifrado de exportación." : "Export encryption failed."
+        });
+      }
+    } catch (e: any) {
+      (window as any).electronAPI.showMessageBox({
+        type: 'error',
+        title: 'VinTerm Error',
+        message: "Error inesperado en la exportación: " + e.message
+      });
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      if (typeof (window as any).electronAPI.openImportFile !== 'function') {
+        (window as any).electronAPI.showMessageBox({
+          type: 'error',
+          title: 'VinTerm',
+          message: settings.language === 'es' ? "Por favor reinicia la aplicación (cierra y vuelve a abrir) para aplicar los cambios del sistema de archivos." : "Please restart the application to apply file system changes."
+        });
+        return;
+      }
+
+      const openRes = await (window as any).electronAPI.openImportFile();
+      if (!openRes.success || !openRes.data) {
+        if (openRes.message !== 'Canceled') {
+          (window as any).electronAPI.showMessageBox({
+            type: 'error',
+            title: 'VinTerm Error',
+            message: "Error: " + openRes.message
+          });
+        }
+        return;
+      }
+      
+      const rawData = openRes.data.trim();
+      if (rawData.startsWith('[Bookmarks]')) {
+        const lines = rawData.split('\n');
+        const newSessions: any[] = [];
+        const mobaFolderId = 'folder-moba-' + Date.now();
+        
+        lines.forEach((line: string) => {
+          const trimmed = line.trim();
+          if (trimmed.includes('=#') && trimmed.includes('%')) {
+            const parts = trimmed.split('=');
+            if (parts.length >= 2) {
+              let name = parts[0];
+              if (name.includes(' (')) name = name.substring(0, name.lastIndexOf(' ('));
+              
+              const dataParts = parts.slice(1).join('=').split('%');
+              if (dataParts.length >= 4) {
+                const protocol = dataParts[0];
+                if (protocol.includes('109') || protocol.includes('104')) {
+                  const host = dataParts[1];
+                  const portStr = dataParts[2];
+                  const port = portStr ? parseInt(portStr, 10) : 22;
+                  const username = dataParts[3];
+                  
+                  newSessions.push({
+                    id: 'session-moba-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+                    name: name,
+                    type: 'ssh',
+                    folderId: mobaFolderId,
+                    config: {
+                      host,
+                      port,
+                      username,
+                      password: ''
+                    }
+                  });
+                }
+              }
+            }
+          }
+        });
+        
+        if (newSessions.length > 0) {
+          setFolders(prev => {
+            const newFolder = { id: mobaFolderId, name: 'MobaXterm Import', parentId: null, isOpen: true };
+            const updated = [...prev, newFolder];
+            localStorage.setItem('kx_folders', JSON.stringify(updated));
+            return updated;
+          });
+          
+          setSavedSessions(prev => {
+            const updated = [...prev, ...newSessions];
+            localStorage.setItem('kx_sessions', JSON.stringify(updated));
+            return updated;
+          });
+          
+          (window as any).electronAPI.showMessageBox({
+            type: 'info',
+            title: 'VinTerm',
+            message: settings.language === 'es' ? `Importación exitosa de MobaXterm. Se agregaron ${newSessions.length} sesiones.` : `MobaXterm import successful. Added ${newSessions.length} sessions.`
+          });
+        } else {
+          (window as any).electronAPI.showMessageBox({
+            type: 'info',
+            title: 'VinTerm',
+            message: settings.language === 'es' ? "No se encontraron sesiones SSH válidas en el archivo de MobaXterm." : "No valid SSH sessions found in the MobaXterm file."
+          });
+        }
+        return;
+      }
+      
+      const password = await requestPassword('import');
+      if (!password) return;
+      
+      const res = await (window as any).electronAPI.vaultDecrypt(openRes.data, password);
+      if (res.success && res.data) {
+        try {
+          const parsed = JSON.parse(res.data);
+          if (parsed.format === 'vinterm') {
+            const { sessions, folders, settings: importedSettings } = parsed.data;
+            if (sessions) {
+              const importedSessions = JSON.parse(sessions);
+              setSavedSessions(prev => {
+                const merged = [...prev];
+                importedSessions.forEach((is: any) => {
+                  if (!merged.find(s => s.id === is.id)) merged.push(is);
+                });
+                localStorage.setItem('kx_sessions', JSON.stringify(merged));
+                return merged;
+              });
+            }
+            if (folders) {
+              const importedFolders = JSON.parse(folders);
+              setFolders(prev => {
+                const merged = [...prev];
+                importedFolders.forEach((ifol: any) => {
+                  if (!merged.find(f => f.id === ifol.id)) merged.push(ifol);
+                });
+                localStorage.setItem('kx_folders', JSON.stringify(merged));
+                return merged;
+              });
+            }
+            (window as any).electronAPI.showMessageBox({
+              type: 'info',
+              title: 'VinTerm',
+              message: settings.language === 'es' ? "Importación exitosa. Los datos han sido fusionados." : "Import successful! Data has been merged."
+            });
+          } else if (parsed.format === 'mxtsessions') {
+            (window as any).electronAPI.showMessageBox({
+              type: 'info',
+              title: 'VinTerm',
+              message: "MobaXterm import is not yet supported."
+            });
+          } else {
+            (window as any).electronAPI.showMessageBox({
+              type: 'error',
+              title: 'VinTerm',
+              message: "Unknown format."
+            });
+          }
+        } catch (e) {
+          (window as any).electronAPI.showMessageBox({
+            type: 'error',
+            title: 'VinTerm',
+            message: "Failed to parse imported data."
+          });
+        }
+      } else {
+        (window as any).electronAPI.showMessageBox({
+          type: 'error',
+          title: 'VinTerm',
+          message: settings.language === 'es' ? "Error al descifrar. ¿Contraseña incorrecta?" : "Decryption failed. Incorrect password?"
+        });
+      }
+    } catch (e: any) {
+      (window as any).electronAPI.showMessageBox({
+        type: 'error',
+        title: 'VinTerm',
+        message: "Error inesperado en la importación: " + e.message
+      });
+    }
+  };
+
   const toggleFolder = (id: string) => {
     setFolders(folders.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f))
   }
@@ -207,7 +520,14 @@ function App() {
 
   const handleSessionContextMenu = (e: React.MouseEvent, session: SavedSession) => {
     e.preventDefault();
+    e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, targetId: session.id, type: 'session' });
+  }
+
+  const handleFolderContextMenu = (e: React.MouseEvent, folder: Folder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, targetId: folder.id, type: 'folder' });
   }
 
   const editSession = (id: string) => {
@@ -234,11 +554,11 @@ function App() {
   const handleTestConnection = async () => {
     if (!sshForm.host || !sshForm.username) {
       setTestStatus('error');
-      setTestMessage('Host and Username are required to test.');
+      setTestMessage(t('hostRequired', settings.language));
       return;
     }
     setTestStatus('testing');
-    setTestMessage('Testing connection...');
+    setTestMessage(t('testing', settings.language));
     const result = await window.electronAPI.testSSHConnection({
       host: sshForm.host,
       port: sshForm.port,
@@ -247,7 +567,17 @@ function App() {
       privateKeyPath: sshForm.usePrivateKey ? sshForm.privateKeyPath : undefined
     });
     setTestStatus(result.success ? 'success' : 'error');
-    setTestMessage(result.message);
+    
+    let displayMessage = result.message;
+    if (result.success && result.message === 'Connection successful!') {
+      displayMessage = t('testSuccess', settings.language);
+    } else if (result.message.startsWith('SSH Error: ')) {
+      displayMessage = t('testFailed', settings.language) + ': ' + result.message.replace('SSH Error: ', '');
+    } else if (result.message.startsWith('Failed to read private key: ')) {
+      displayMessage = t('testFailed', settings.language) + ' (Key): ' + result.message.replace('Failed to read private key: ', '');
+    }
+    
+    setTestMessage(displayMessage);
   }
 
   const deleteSession = (id: string) => {
@@ -255,8 +585,7 @@ function App() {
     setContextMenu(null);
   }
 
-  const deleteFolder = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
+  const deleteFolder = (id: string) => {
     if(confirm(t('confirmDeleteFolder', settings.language))) {
       let toDelete = new Set<string>([id])
       let added = true;
@@ -336,6 +665,7 @@ function App() {
               onDragLeave={onDragLeave}
               onDrop={(e) => onDrop(e, folder.id)}
               onClick={() => toggleFolder(folder.id)}
+              onContextMenu={(e) => handleFolderContextMenu(e, folder)}
               style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 
@@ -351,7 +681,6 @@ function App() {
               <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
                 {folder.isOpen ? '📂' : '📁'} {folder.name}
               </span>
-              <span onClick={(e) => deleteFolder(e, folder.id)} style={{ color: 'var(--text-muted)' }}>×</span>
             </div>
             
             {folder.isOpen && (
@@ -394,11 +723,69 @@ function App() {
   
   if (vaultStatus !== 'unlocked') {
     return (
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+        
+        {/* Logo on Start Screen */}
+        <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/vinterm.png" alt="VinTerm Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--accent)', letterSpacing: '1px' }}>VinTerm</span>
+        </div>
+
+        {/* Language Switcher on Start Screen */}
+        <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
+          <select 
+            value={settings.language} 
+            onChange={(e) => {
+              const newSettings = { ...settings, language: e.target.value };
+              setSettings(newSettings);
+              localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+            }}
+            style={{ padding: '8px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            <option value="es">🇪🇸 Español</option>
+            <option value="en">🇬🇧 English</option>
+          </select>
+        </div>
+
         <div style={{ backgroundColor: 'var(--bg-panel)', padding: '30px', borderRadius: '8px', width: '400px', border: '1px solid var(--border-color)', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
           <h2 style={{ marginTop: 0, color: 'var(--accent)' }}>{t('vaultTitle', settings.language)}</h2>
           
           {vaultStatus === 'checking' && <p>{t('vaultChecking', settings.language)}</p>}
+          
+          {vaultStatus === 'selecting' && (
+            <div>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '15px' }}>{t('selectVault', settings.language)}:</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {vaultsList.map(v => (
+                  <button 
+                    key={v.id} 
+                    onClick={() => { 
+                      setCurrentVaultId(v.id); 
+                      setVaultStatus('locked'); 
+                      setMasterPassword('');
+                      setVaultError('');
+                    }}
+                    style={{ padding: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}
+                  >
+                    🔐 {v.name}
+                  </button>
+                ))}
+                <button 
+                  onClick={() => { 
+                    setVaultStatus('setup'); 
+                    setNewVaultName('');
+                    setNewVaultHint('');
+                    setMasterPassword('');
+                    setConfirmPassword('');
+                    setVaultError('');
+                  }}
+                  style={{ marginTop: '10px', padding: '10px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px dashed var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  + {t('createNewVault', settings.language)}
+                </button>
+              </div>
+            </div>
+          )}
           
           {vaultStatus === 'setup' && (() => {
             const getPasswordStrength = (pass: string) => {
@@ -424,34 +811,58 @@ function App() {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const pass = masterPassword;
+              if (pass !== confirmPassword) {
+                setVaultError(t('vaultPasswordsMismatch', settings.language));
+                return;
+              }
+              if (newVaultHint && pass === newVaultHint) {
+                setVaultError(t('vaultHintMatchError', settings.language));
+                return;
+              }
               if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{6,12}$/.test(pass)) {
                 setVaultError(t('vaultError', settings.language));
                 return;
               }
               let sessionsToSave = [];
-              try {
-                const oldSessionsStr = localStorage.getItem('kx_sessions');
-                if (oldSessionsStr) sessionsToSave = JSON.parse(oldSessionsStr);
-              } catch (e) {
-                console.error('Failed to parse old sessions:', e);
-              }
+              const newId = `vault_${Date.now()}`;
               
               const res = await window.electronAPI.vaultEncrypt(JSON.stringify(sessionsToSave), pass);
               if (res.success && res.data) {
-                localStorage.setItem('kx_vault_data', res.data);
-                localStorage.setItem('kx_vault_setup', 'true');
-                localStorage.removeItem('kx_sessions');
-                setSavedSessions(sessionsToSave);
+                localStorage.setItem(`kx_vault_data_${newId}`, res.data);
+                localStorage.setItem(`kx_folders_${newId}`, '[]');
+                
+                const newVault: VaultInfo = { id: newId, name: newVaultName || t('vaultName', settings.language), hint: newVaultHint };
+                const updatedVaults = [...vaultsList, newVault];
+                localStorage.setItem('kx_vaults_index', JSON.stringify(updatedVaults));
+                setVaultsList(updatedVaults);
+                
+                setCurrentVaultId(newId);
+                setSavedSessions([]);
+                setFolders([]);
                 setVaultStatus('unlocked');
               } else {
                 setVaultError(t('vaultFailed', settings.language));
               }
             }}>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{t('vaultWelcome', settings.language)}</p>
-              {vaultError && <p style={{ color: 'var(--error-bg)', fontSize: '0.9rem' }}>{vaultError}</p>}
+              {vaultError && <p style={{ color: 'var(--error-text)', fontSize: '0.9rem', fontWeight: 'bold' }}>{vaultError}</p>}
               <div style={{ marginBottom: '15px' }}>
-                <input required autoFocus type="password" placeholder={t("masterPassword", settings.language)} value={masterPassword} onChange={e => { setMasterPassword(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                <div style={{ height: '4px', width: '100%', backgroundColor: 'var(--border-color)', marginTop: '5px', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <input type="text" required placeholder={t('vaultName', settings.language)} value={newVaultName} onChange={e => setNewVaultName(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ position: 'relative', marginBottom: '10px' }}>
+                  <input required autoFocus type={showVaultPassword ? "text" : "password"} placeholder={t("masterPassword", settings.language)} value={masterPassword} onChange={e => { setMasterPassword(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', paddingRight: '40px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', boxSizing: 'border-box' }} />
+                  <span onClick={() => setShowVaultPassword(!showVaultPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', opacity: 0.6 }} title={t('vaultShowHide', settings.language)}>
+                    {showVaultPassword ? '🙈' : '👁️'}
+                  </span>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input required type={showVaultPassword ? "text" : "password"} placeholder={t('vaultConfirmPass', settings.language)} value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', paddingRight: '40px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ position: 'relative', marginTop: '10px' }}>
+                  <input type="text" placeholder={t('vaultHint', settings.language)} value={newVaultHint} onChange={e => { setNewVaultHint(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ height: '4px', width: '100%', backgroundColor: 'var(--border-color)', marginTop: '8px', borderRadius: '2px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${strength.score}%`, backgroundColor: strength.color, transition: 'all 0.3s ease' }}></div>
                 </div>
                 <ul style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '10px', paddingLeft: '20px' }}>
@@ -461,18 +872,45 @@ function App() {
                   <li>{t('vaultRules4', settings.language)}</li>
                 </ul>
               </div>
-              <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('createVault', settings.language)}</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {vaultsList.length > 0 && (
+                  <button type="button" onClick={() => setVaultStatus('selecting')} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                    {t('cancel', settings.language)}
+                  </button>
+                )}
+                <button type="submit" style={{ flex: 2, padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {t('createVault', settings.language)}
+                </button>
+              </div>
             </form>
           )})()}
 
           {vaultStatus === 'locked' && (
             <form onSubmit={async (e) => {
               e.preventDefault();
-              const vaultData = localStorage.getItem('kx_vault_data');
+              const vaultData = localStorage.getItem(`kx_vault_data_${currentVaultId}`);
               if (!vaultData) { setVaultError(t('vaultCorrupted', settings.language)); return; }
               const res = await window.electronAPI.vaultDecrypt(vaultData, masterPassword);
               if (res.success && res.data) {
                 setSavedSessions(JSON.parse(res.data));
+                
+                const savedFoldersEnc = localStorage.getItem(`kx_folders_${currentVaultId}`);
+                if (savedFoldersEnc && savedFoldersEnc !== '[]') {
+                  if (savedFoldersEnc.startsWith('[')) {
+                    // Plaintext fallback (migration)
+                    setFolders(JSON.parse(savedFoldersEnc).map((f: any) => ({ ...f, parentId: f.parentId || null })));
+                  } else {
+                    const folderRes = await window.electronAPI.vaultDecrypt(savedFoldersEnc, masterPassword);
+                    if (folderRes.success && folderRes.data) {
+                      setFolders(JSON.parse(folderRes.data).map((f: any) => ({ ...f, parentId: f.parentId || null })));
+                    } else {
+                      setFolders([]); // corrupted or failed decrypt
+                    }
+                  }
+                } else {
+                  setFolders([]);
+                }
+                
                 setVaultStatus('unlocked');
                 setVaultError('');
               } else {
@@ -480,11 +918,30 @@ function App() {
               }
             }}>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{t('vaultUnlockMsg', settings.language)}</p>
-              {vaultError && <p style={{ color: 'var(--error-bg)', fontSize: '0.9rem' }}>{vaultError}</p>}
+              
+              {(() => {
+                const vault = vaultsList.find(v => v.id === currentVaultId);
+                return vault && vault.hint ? (
+                  <div style={{ padding: '10px', backgroundColor: 'var(--bg-editor)', borderLeft: '3px solid var(--accent)', borderRadius: '4px', marginBottom: '15px' }}>
+                    <p style={{ fontSize: '0.85rem', margin: 0 }}>
+                      <strong>{t('vaultHintLabel', settings.language)}</strong> 
+                      {vault.hint}
+                    </p>
+                  </div>
+                ) : null;
+              })()}
+              
+              {vaultError && <p style={{ color: 'var(--error-text)', fontSize: '0.9rem', fontWeight: 'bold' }}>{vaultError}</p>}
               <div style={{ marginBottom: '15px' }}>
                 <input required autoFocus type="password" placeholder={t("masterPassword", settings.language)} value={masterPassword} onChange={e => { setMasterPassword(e.target.value); setVaultError(''); }} style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
               </div>
               <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('unlockVault', settings.language)}</button>
+              
+              <div style={{ textAlign: 'center', marginTop: '15px' }}>
+                <button type="button" onClick={() => setVaultStatus('selecting')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline' }}>
+                  {t('switchVault', settings.language) || 'Switch Vault'}
+                </button>
+              </div>
             </form>
           )}
         </div>
@@ -498,14 +955,15 @@ function App() {
       {/* Sidebar */}
       <div style={{ width: '260px', backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '20px 20px 10px 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <img src="/vinterm.png" alt="VinTerm Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-main)' }}>VinTerm</h2>
           </div>
           
           <button 
             onClick={addLocal}
             style={{ width: '100%', padding: '8px', marginBottom: '10px', cursor: 'pointer', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
-            + Local Terminal
+            {t('localTerminal', settings.language)}
           </button>
           
           <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
@@ -518,12 +976,12 @@ function App() {
                 setShowSessionModal(true);
               }} 
               style={{ flex: 1, padding: '8px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
-            >  + Session
+            >  + {t('newSession', settings.language)}
             </button>
             <button 
               onClick={() => setShowFolderModal(true)}
               style={{ flex: 1, padding: '8px', cursor: 'pointer', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem' }}>
-              + Folder
+              + {t('newFolder', settings.language)}
             </button>
           </div>
         </div>
@@ -536,13 +994,28 @@ function App() {
           onDrop={(e) => onDrop(e, null)}
         >
           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', paddingLeft: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-            Saved Sessions
+            {t('sessions', settings.language)}
           </div>
           
           {renderTree(null)}
 
         </div>
         
+        {/* Switch Vault Button */}
+        <div 
+          onClick={() => {
+            setVaultStatus('selecting');
+            setFolders([]);
+            setSavedSessions([]);
+          }}
+          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+        >
+          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>🔐</span>
+          <span style={{ color: 'var(--text-muted)', fontWeight: '500', fontSize: '0.9rem' }}>{t('switchVault', settings.language) || 'Switch Vault'}</span>
+        </div>
+
         {/* Bottom Settings Button */}
         <div 
           onClick={openSettings}
@@ -632,7 +1105,19 @@ function App() {
                   onClick={() => setActiveSettingsTab('ai')}
                   style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'ai' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'ai' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'ai' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
                 >
-                  IA Copilot
+                  Vincent AI
+                </li>
+                <li 
+                  onClick={() => setActiveSettingsTab('security')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'security' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'security' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'security' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  {t('securityTab', settings.language) || 'Security'}
+                </li>
+                <li 
+                  onClick={() => setActiveSettingsTab('data')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'data' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'data' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'data' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  {settings.language === 'es' ? 'Datos' : 'Data'}
                 </li>
               </ul>
             </div>
@@ -721,7 +1206,7 @@ function App() {
                 {/* AI COPILOT TAB */}
                 {activeSettingsTab === 'ai' && (
                   <>
-                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>IA Copilot</h2>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>Vincent AI</h2>
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>Selecciona tu proveedor de inteligencia artificial.</p>
                     
                     <div>
@@ -774,6 +1259,104 @@ function App() {
                     <div style={{ marginTop: '15px' }}>
                       <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Modelo (Model):</label>
                       <input type="text" value={settingsForm.aiModel || ''} onChange={e => setSettingsForm({...settingsForm, aiModel: e.target.value})} placeholder="gpt-4o-mini" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                  </>
+                )}
+
+                {/* SECURITY TAB */}
+                {activeSettingsTab === 'security' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--accent)' }}>
+                      {t('changePasswordTitle', settings.language)}
+                    </h2>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                      {passwordChangeStatus === 'error' && <div style={{ color: 'var(--error-text)', fontWeight: 'bold' }}>{passwordChangeMsg}</div>}
+                      {passwordChangeStatus === 'success' && <div style={{ color: 'var(--neon-green, #00ff00)', fontWeight: 'bold' }}>{passwordChangeMsg}</div>}
+                      
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('currentPassword', settings.language)}:</label>
+                        <input type="password" value={oldPassword} onChange={e => { setOldPassword(e.target.value); setPasswordChangeStatus('idle'); }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('newPassword', settings.language)}:</label>
+                        <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setPasswordChangeStatus('idle'); }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('confirmNewPassword', settings.language)}:</label>
+                        <input type="password" value={confirmNewPassword} onChange={e => { setConfirmNewPassword(e.target.value); setPasswordChangeStatus('idle'); }} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                      <button type="button" onClick={async () => {
+                        if (oldPassword !== masterPassword) {
+                          setPasswordChangeStatus('error');
+                          setPasswordChangeMsg(t('wrongCurrentPassword', settings.language));
+                          return;
+                        }
+                        if (newPassword !== confirmNewPassword) {
+                          setPasswordChangeStatus('error');
+                          setPasswordChangeMsg(t('passwordsDoNotMatch', settings.language));
+                          return;
+                        }
+                        if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{6,12}$/.test(newPassword)) {
+                          setPasswordChangeStatus('error');
+                          setPasswordChangeMsg(t('vaultError', settings.language));
+                          return;
+                        }
+                        
+                        // Re-encrypt
+                        const resSessions = await window.electronAPI.vaultEncrypt(JSON.stringify(savedSessions), newPassword);
+                        const resFolders = await window.electronAPI.vaultEncrypt(JSON.stringify(folders), newPassword);
+                        
+                        if (resSessions.success && resFolders.success && resSessions.data && resFolders.data) {
+                          localStorage.setItem(`kx_vault_data_${currentVaultId}`, resSessions.data);
+                          localStorage.setItem(`kx_folders_${currentVaultId}`, resFolders.data);
+                          setMasterPassword(newPassword);
+                          setPasswordChangeStatus('success');
+                          setPasswordChangeMsg(t('passwordChangedSuccess', settings.language));
+                          setOldPassword('');
+                          setNewPassword('');
+                          setConfirmNewPassword('');
+                        } else {
+                          setPasswordChangeStatus('error');
+                          setPasswordChangeMsg('Encryption error');
+                        }
+                      }} style={{ padding: '10px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px' }}>
+                        {t('changePasswordBtn', settings.language)}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* DATA TAB */}
+                {activeSettingsTab === 'data' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--accent)' }}>
+                      {settings.language === 'es' ? 'Gestión de Datos' : 'Data Management'}
+                    </h2>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                      {settings.language === 'es' ? 'Exporta o importa de forma segura tus configuraciones y sesiones guardadas. Los datos estarán cifrados con una contraseña.' : 'Securely export or import your configurations and saved sessions. The data will be encrypted with a password.'}
+                    </p>
+                    
+                    <div style={{ display: 'flex', gap: '15px', flexDirection: 'column' }}>
+                      <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--border-light)', borderRadius: '4px' }}>
+                        <h4 style={{ margin: '0 0 10px 0' }}>{settings.language === 'es' ? 'Exportar' : 'Export'}</h4>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '15px', margin: 0 }}>
+                          {settings.language === 'es' ? 'Crea un archivo de respaldo cifrado con tus sesiones y carpetas actuales.' : 'Create an encrypted backup file with your current sessions and folders.'}
+                        </p>
+                        <button type="button" onClick={handleExport} style={{ marginTop: '10px', padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                          {settings.language === 'es' ? 'Exportar Datos' : 'Export Data'}
+                        </button>
+                      </div>
+
+                      <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--border-light)', borderRadius: '4px' }}>
+                        <h4 style={{ margin: '0 0 10px 0' }}>{settings.language === 'es' ? 'Importar' : 'Import'}</h4>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '15px', margin: 0 }}>
+                          {settings.language === 'es' ? 'Restaura tus datos desde un archivo de respaldo. Se fusionarán con los actuales.' : 'Restore your data from a backup file. They will be merged with the current ones.'}
+                        </p>
+                        <button type="button" onClick={handleImport} style={{ marginTop: '10px', padding: '8px 15px', backgroundColor: '#52c41a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                          {settings.language === 'es' ? 'Importar Datos' : 'Import Data'}
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -906,6 +1489,64 @@ function App() {
         </div>
       )}
 
+      {/* Password Prompt Modal */}
+      {passwordPrompt?.isOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'var(--overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}>
+          <div style={{ backgroundColor: 'var(--bg-panel)', padding: '20px', borderRadius: '8px', width: '350px', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ marginTop: 0 }}>
+              {passwordPrompt.type === 'export' 
+                ? (settings.language === 'es' ? 'Contraseña para Exportar' : 'Export Password') 
+                : (settings.language === 'es' ? 'Contraseña para Importar' : 'Import Password')}
+            </h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              {passwordPrompt.type === 'export'
+                ? (settings.language === 'es' ? 'Ingresa una contraseña para cifrar tus datos:' : 'Enter a password to encrypt your data:')
+                : (settings.language === 'es' ? 'Ingresa la contraseña para descifrar el archivo:' : 'Enter the password to decrypt the file:')}
+            </p>
+            <form onSubmit={e => {
+              e.preventDefault();
+              const input = (e.target as any).elements.password.value;
+              passwordPrompt.resolve(input);
+              setPasswordPrompt(null);
+            }}>
+              <input name="password" type="password" required autoFocus style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', marginBottom: '15px' }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" onClick={() => { passwordPrompt.resolve(null); setPasswordPrompt(null); }} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
+                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>OK</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Modal */}
+      {showRenameModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'var(--bg-panel)', padding: '20px', borderRadius: '8px', width: '300px', border: '1px solid var(--border-color)', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '15px' }}>{t('rename', settings.language) || 'Rename'}</h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (renameFolderName.trim() && renameFolderId) {
+                setFolders(folders.map(f => f.id === renameFolderId ? { ...f, name: renameFolderName.trim() } : f));
+                setShowRenameModal(false);
+              }
+            }}>
+              <input 
+                autoFocus 
+                type="text" 
+                value={renameFolderName} 
+                onChange={e => setRenameFolderName(e.target.value)} 
+                style={{ width: '100%', padding: '8px', marginBottom: '15px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px', boxSizing: 'border-box' }} 
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" onClick={() => setShowRenameModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language) || 'Cancel'}</button>
+                <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>OK</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <div style={{
@@ -937,6 +1578,61 @@ function App() {
                 onClick={() => deleteSession(contextMenu.targetId)}
               >
                 🗑️ {t('delete', settings.language)} Session
+              </div>
+            </>
+          )}
+          {contextMenu.type === 'folder' && (
+            <>
+              <div 
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => {
+                  setFolderForm({ name: '', parentId: contextMenu.targetId });
+                  setShowFolderModal(true);
+                  setContextMenu(null);
+                }}
+              >
+                📁 {t('newFolder', settings.language)}
+              </div>
+              <div 
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => {
+                  setEditingSessionId(null);
+                  setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: contextMenu.targetId, usePrivateKey: false });
+                  setTestStatus('idle');
+                  setTestMessage('');
+                  setShowSessionModal(true);
+                  setContextMenu(null);
+                }}
+              >
+                🖥️ {t('newSession', settings.language)}
+              </div>
+              <div 
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => {
+                  const folder = folders.find(f => f.id === contextMenu.targetId);
+                  if (folder) {
+                    setRenameFolderId(folder.id);
+                    setRenameFolderName(folder.name);
+                    setShowRenameModal(true);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                ✏️ {t('rename', settings.language) || 'Rename'}
+              </div>
+              <div 
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem', color: '#ff6b6b' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => deleteFolder(contextMenu.targetId)}
+              >
+                🗑️ {t('delete', settings.language) || 'Delete'}
               </div>
             </>
           )}
