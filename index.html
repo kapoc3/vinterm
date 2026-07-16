@@ -9,32 +9,38 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="assets/vinterm.png">
 </head>
 <body>
     <div class="blob blob-1"></div>
     <div class="blob blob-2"></div>
     
     <nav class="navbar">
-        <div class="logo">
-            <span class="logo-icon">🚀</span>
-            <h1>VinTerm</h1>
+        <div class="logo" style="display: flex; align-items: center; gap: 10px;">
+            <img src="assets/vinterm.png" alt="VinTerm Logo" style="height: 32px; object-fit: contain;">
+            <h1 style="margin: 0;">VinTerm</h1>
         </div>
         <div class="nav-links">
-            <a href="#features">Features</a>
-            <a href="https://github.com/kapoc3/vinterm/blob/main/docs/ARCHITECTURE.md" target="_blank">Docs</a>
+            <a href="#features" data-i18n="navFeatures">Features</a>
+            <a href="#gallery" data-i18n="navGallery">Gallery</a>
+            <a href="https://github.com/kapoc3/vinterm/blob/main/docs/ARCHITECTURE.md" target="_blank" data-i18n="navDocs">Docs</a>
             <a href="https://github.com/kapoc3/vinterm" target="_blank">GitHub</a>
+            <select id="lang-switcher" style="background: transparent; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px; margin-left: 10px; cursor: pointer;">
+                <option value="en">EN</option>
+                <option value="es">ES</option>
+            </select>
         </div>
     </nav>
 
     <header class="hero">
         <div class="hero-content">
-            <h2 class="hero-title">Terminal Management,<br><span class="accent-text">Reimagined.</span></h2>
-            <p class="hero-subtitle">Experience a next-generation SSH client built for speed, security, and aesthetics. AES-256 encrypted vaults, real-time server telemetry, and integrated SFTP.</p>
+            <h2 class="hero-title" data-i18n="heroTitle">Terminal Management,<br><span class="accent-text">Reimagined.</span></h2>
+            <p class="hero-subtitle" data-i18n="heroSubtitle">Experience a next-generation SSH client that integrates Artificial Intelligence as a value multiplier for server administration. Built for speed, security, and aesthetics with AES-256 encrypted vaults, real-time server telemetry, and integrated SFTP.</p>
             <div class="hero-cta">
-                <a href="https://github.com/kapoc3/vinterm/releases/latest" id="download-btn" class="btn primary-btn">Download VinTerm</a>
-                <a href="#features" class="btn secondary-btn">Explore Features</a>
+                <a href="https://github.com/kapoc3/vinterm/releases/latest" id="download-btn" class="btn primary-btn" data-i18n="btnDownload">Download VinTerm</a>
+                <a href="#features" class="btn secondary-btn" data-i18n="btnExplore">Explore Features</a>
             </div>
-            <p class="os-hint" id="os-hint">Available for macOS, Windows, and Linux.</p>
+            <p class="os-hint" id="os-hint" data-i18n="osHint">Available for macOS, Windows, and Linux.</p>
         </div>
         <div class="hero-image-wrapper">
             <div class="glass-panel">
@@ -45,30 +51,76 @@
 
     <section id="features" class="features">
         <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3 data-i18n="featVincentTitle">Vincent AI Assistant</h3>
+            <p data-i18n="featVincentDesc">The only terminal that lets you connect your favorite AI models. Optimize your server management by interacting with our built-in intelligent assistant, Vincent.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🧠</div>
+            <h3 data-i18n="featAiTitle">AI Context Isolation</h3>
+            <p data-i18n="featAiDesc">You no longer have to worry about the AI knowing your credentials. We isolate security from the AI context, allowing commands to be generated and executed without sharing your secrets.</p>
+        </div>
+        <div class="feature-card">
             <div class="feature-icon">🔒</div>
-            <h3>Security Vault</h3>
-            <p>Your passwords and private keys are never stored in plain text. VinTerm uses military-grade AES-256-GCM encryption with a Master Password.</p>
+            <h3 data-i18n="featVaultTitle">Security Vault</h3>
+            <p data-i18n="featVaultDesc">Your passwords and private keys are never stored in plain text. VinTerm uses military-grade AES-256-GCM encryption with a Master Password.</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">📊</div>
-            <h3>Server Telemetry</h3>
-            <p>Keep an eye on your infrastructure. Real-time CPU, Memory, and Disk usage polling directly integrated into the terminal status bar.</p>
+            <h3 data-i18n="featTeleTitle">Server Telemetry</h3>
+            <p data-i18n="featTeleDesc">Keep an eye on your infrastructure. Real-time CPU, Memory, and Disk usage polling directly integrated into the terminal status bar.</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">📂</div>
-            <h3>Integrated SFTP</h3>
-            <p>Manage files seamlessly alongside your terminal sessions. Upload, download, delete, and even edit remote files instantly.</p>
+            <h3 data-i18n="featSftpTitle">Integrated SFTP</h3>
+            <p data-i18n="featSftpDesc">Manage files seamlessly alongside your terminal sessions. Upload, download, delete, and even edit remote files instantly.</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🎨</div>
-            <h3>Premium Themes</h3>
-            <p>Beautiful UI built with CSS variables. Switch between elegant Light and Dark modes with a single click, fully synced with the terminal engine.</p>
+            <h3 data-i18n="featThemesTitle">Premium Themes</h3>
+            <p data-i18n="featThemesDesc">Beautiful UI built with CSS variables. Switch between elegant Light and Dark modes with a single click, fully synced with the terminal engine.</p>
+        </div>
+    </section>
+
+    <section id="gallery" class="gallery">
+        <h2 class="gallery-title" data-i18n="galleryTitle">Gallery</h2>
+        <p class="gallery-subtitle" data-i18n="gallerySubtitle">See VinTerm in action</p>
+        <div class="carousel-container">
+            <button class="carousel-btn prev-btn" id="carousel-prev" aria-label="Previous">&lt;</button>
+            <div class="carousel-track" id="carousel-track">
+                <!-- Add screenshot images here -->
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-1.png" alt="VinTerm Screenshot 1" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-2.png" alt="VinTerm Screenshot 2" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-3.png" alt="VinTerm Screenshot 3" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-4.png" alt="VinTerm Screenshot 4" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-5.png" alt="VinTerm Screenshot 5" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-6.png" alt="VinTerm Screenshot 6" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-7.png" alt="VinTerm Screenshot 7" loading="lazy">
+                </div>
+                <div class="carousel-slide glass-panel">
+                    <img src="assets/screenshot-8.png" alt="VinTerm Screenshot 8" loading="lazy">
+                </div>
+            </div>
+            <button class="carousel-btn next-btn" id="carousel-next" aria-label="Next">&gt;</button>
         </div>
     </section>
 
     <footer>
-        <p>Proudly named in honor of Vicente.</p>
-        <p class="footer-sub">&copy; 2026 Kappsco. Open Source under MIT License.</p>
+        <p data-i18n="footerVicente">Proudly named in honor of Vicente.</p>
+        <p class="footer-sub" data-i18n="footerCopyright">&copy; 2026 Kappsco. Open Source under MIT License.</p>
     </footer>
 
     <script src="script.js"></script>
