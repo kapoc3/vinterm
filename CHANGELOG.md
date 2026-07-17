@@ -5,8 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-07-16
+## [2.2.2] - 2026-07-17
 
+### Added
+- **Google Cloud Platform (GCP) Support**: Native integration to create and connect to GCP Compute Engine instances directly using `gcloud compute ssh` without needing manual SSH key management.
+- **GCP Server Telemetry**: Real-time polling for CPU, Memory, and Disk usage extended to support GCP instances using robust command escaping logic.
+- **Tab Navigation for Sessions**: Improved the session creation UI by replacing generic radio buttons with intuitive, icon-driven Tab navigation (SSH vs GCP).
+- **Documentation i18n**: Fully translated `README.md`, `ARCHITECTURE.md`, and `INSTALL.md` to Spanish (`*.es.md`), with an easy-access language toggle at the top of the files.
+- **Website Enhancements**: Updated the landing page to feature the new GCP integration and missing feature cards. 
+
+### Changed
+- **Default Session Type**: Standard SSH is now explicitly selected by default when creating a new session to ensure a smoother onboarding UX.
+
+## [1.1.0] - 2026-07-16
 ### Added
 - **Ko-Fi Sponsor Integration**: Added native support buttons across the application sidebar, website, and GitHub repository to collect community tips.
 - **Change Master Password**: New dedicated 'Security' tab in the application settings allowing users to securely validate and re-encrypt their entire vault with a new master password.
