@@ -3,6 +3,7 @@
 ![VinTerm](https://img.shields.io/badge/Status-Beta-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Community](https://img.shields.io/badge/Community-Open_Source-orange.svg)
+[![Ko-Fi](https://img.shields.io/badge/Support_me-Ko--fi-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/kapssco)
 
 **VinTerm** is a modern, highly secure, and elegant SSH client and terminal emulator, designed to streamline server management with integrated SFTP, real-time telemetry, and enterprise-grade security.
 

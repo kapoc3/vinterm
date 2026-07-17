@@ -3,6 +3,34 @@ import { t } from './i18n'
 import { TerminalComponent } from './Terminal'
 import './App.css'
 
+export interface AiProfile {
+  id: string;
+  name: string;
+  provider: 'openai' | 'ollama' | 'deepseek' | 'custom';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export interface AiAgent {
+  id: string;
+  name: string;
+  systemPrompt: string;
+}
+
+export const FIXED_AGENTS: AiAgent[] = [
+  {
+    id: 'agent_devops',
+    name: 'Vincent AI (DevOps)',
+    systemPrompt: 'Eres Vincent AI, un ingeniero DevOps y SysAdmin Senior de élite experto en servidores Linux, redes y entornos de consola. Tu objetivo es ayudar al usuario a administrar su sistema y resolver problemas con la máxima eficiencia y seguridad.'
+  },
+  {
+    id: 'agent_meta',
+    name: 'Creador de Agentes (Meta)',
+    systemPrompt: 'Eres un experto Creador de Agentes de IA. El usuario te dará una descripción en lenguaje natural de la personalidad, rol o tarea que necesita automatizar. Tu trabajo es responder ÚNICAMENTE con el "System Prompt" ideal, detallado y altamente efectivo que el usuario debe configurar para ese nuevo agente. No incluyas saludos ni explicaciones, solo devuelve el texto del System Prompt listo para copiar y pegar.'
+  }
+];
+
 interface TerminalSettings {
   fontFamily: string;
   fontSize: number;
@@ -10,6 +38,12 @@ interface TerminalSettings {
   background: string;
   theme?: 'light' | 'dark' | 'vincent';
   language?: 'en' | 'es';
+  aiProfiles?: AiProfile[];
+  activeAiProfileId?: string;
+  aiAgents?: AiAgent[];
+  activeAiAgentId?: string;
+  
+  // Legacy fields (kept for migration only)
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
@@ -56,10 +90,19 @@ const defaultSettings: TerminalSettings = {
   background: '#1e1e1e',
   theme: 'dark',
   language: 'es',
-  aiProvider: 'openai',
-  aiBaseUrl: 'https://api.openai.com/v1',
-  aiModel: 'gpt-4o-mini',
-  aiApiKey: ''
+  aiProfiles: [
+    {
+      id: 'default_ai',
+      name: 'Default OpenAI',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
+      apiKey: ''
+    }
+  ],
+  activeAiProfileId: 'default_ai',
+  aiAgents: [],
+  activeAiAgentId: 'agent_devops'
 }
 
 function App() {
@@ -111,7 +154,34 @@ function App() {
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([])
   const [settings, setSettings] = useState<TerminalSettings>(() => {
     const saved = localStorage.getItem('kx_settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
+    let parsed: TerminalSettings = saved ? JSON.parse(saved) : defaultSettings;
+    
+    // Migration logic
+    if (!parsed.aiProfiles || parsed.aiProfiles.length === 0) {
+      parsed.aiProfiles = [
+        {
+          id: 'migrated_ai',
+          name: 'Default Profile',
+          provider: parsed.aiProvider || 'openai',
+          baseUrl: parsed.aiBaseUrl || 'https://api.openai.com/v1',
+          model: parsed.aiModel || 'gpt-4o-mini',
+          apiKey: parsed.aiApiKey || ''
+        }
+      ];
+      parsed.activeAiProfileId = 'migrated_ai';
+    }
+    
+    if (parsed.aiAgents) {
+      parsed.aiAgents = parsed.aiAgents.filter(a => a.id !== 'agent_devops' && a.id !== 'agent_meta' && a.id !== 'fallback' && a.id !== 'meta-creator');
+    } else {
+      parsed.aiAgents = [];
+    }
+    
+    if (parsed.activeAiAgentId === 'agent_devops' || parsed.activeAiAgentId === 'agent_meta' || parsed.activeAiAgentId === 'fallback' || parsed.activeAiAgentId === 'meta-creator') {
+      parsed.activeAiAgentId = 'agent_devops';
+    }
+    
+    return parsed;
   })
 
   useEffect(() => {
@@ -172,15 +242,27 @@ function App() {
   const [showSessionModal, setShowSessionModal] = useState(false)
   const [showFolderModal, setShowFolderModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [settingsSaveSuccess, setSettingsSaveSuccess] = useState(false)
+  const [profileTestStatus, setProfileTestStatus] = useState<{[id: string]: 'idle' | 'testing' | 'success' | 'error'}>({})
+  const [profileModels, setProfileModels] = useState<{[id: string]: string[]}>({})
   
   const [showRenameModal, setShowRenameModal] = useState(false)
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null)
   const [renameFolderName, setRenameFolderName] = useState('')
+  
+  // Vault deletion state
+  const [vaultToDelete, setVaultToDelete] = useState<VaultInfo | null>(null)
+  const [deleteVaultNameInput, setDeleteVaultNameInput] = useState('')
 
   const [folderForm, setFolderForm] = useState({ name: '', parentId: '' })
   const [sshForm, setSshForm] = useState({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false })
   const [settingsForm, setSettingsForm] = useState<TerminalSettings>(settings)
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'terminal' | 'ai'>('general')
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'terminal' | 'ai' | 'agents' | 'security' | 'data'>('general')
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null)
+  const [isGeneratingAgent, setIsGeneratingAgent] = useState(false)
+  const [agentDescription, setAgentDescription] = useState('')
+  const [showAgentGenerator, setShowAgentGenerator] = useState(false)
   
   const [availableFonts, setAvailableFonts] = useState<string[]>(['Menlo', 'Monaco', 'Courier New', 'monospace'])
 
@@ -279,8 +361,130 @@ function App() {
   const handleSettingsSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setSettings(settingsForm)
-    setShowSettingsModal(false)
+    setSettingsSaveSuccess(true)
+    setTimeout(() => {
+      setSettingsSaveSuccess(false)
+    }, 3000)
   }
+
+  const testAiProfile = async (profile: AiProfile) => {
+    setProfileTestStatus(prev => ({...prev, [profile.id]: 'testing'}));
+    try {
+      if (profile.provider === 'ollama') {
+        const res = await (window as any).electronAPI.runOllamaList();
+        if (res.success) {
+          const lines = res.data.split('\n').filter((l: string) => l.trim() !== '');
+          const models = lines.slice(1).map((l: string) => l.split(/\s+/)[0]);
+          if (models.length > 0) {
+            setProfileModels(prev => ({...prev, [profile.id]: models}));
+          }
+          setProfileTestStatus(prev => ({...prev, [profile.id]: 'success'}));
+        } else {
+          setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
+        }
+      } else {
+        if (!profile.apiKey && profile.provider !== 'custom') {
+          setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
+          return;
+        }
+        const headers: any = {};
+        if (profile.apiKey) headers['Authorization'] = `Bearer ${profile.apiKey}`;
+        
+        let url = profile.baseUrl.endsWith('/') ? profile.baseUrl.slice(0, -1) : profile.baseUrl;
+        if (url.endsWith('/chat/completions')) url = url.replace('/chat/completions', '');
+        
+        const res = await (window as any).electronAPI.systemFetch(`${url}/models`, { headers });
+        if (res.success) {
+          const data = res.data;
+          if (data.data) {
+            const models = data.data.map((m: any) => m.id);
+            const chatModels = models.filter((m: string) => !m.includes('whisper') && !m.includes('tts') && !m.includes('dall-e') && !m.includes('embedding') && !m.includes('babbage') && !m.includes('davinci'));
+            setProfileModels(prev => ({...prev, [profile.id]: chatModels.length > 0 ? chatModels : models}));
+          }
+          setProfileTestStatus(prev => ({...prev, [profile.id]: 'success'}));
+        } else {
+          setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
+        }
+      }
+    } catch (e) {
+      setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
+    }
+  };
+
+  const handleGenerateAgent = async () => {
+    if (!agentDescription.trim()) return;
+    
+    // Find active AI Profile
+    const activeProfile = settingsForm.aiProfiles?.find(p => p.id === settingsForm.activeAiProfileId) || settingsForm.aiProfiles?.[0];
+    if (!activeProfile) {
+      alert("No hay perfiles de IA configurados.");
+      return;
+    }
+
+    setIsGeneratingAgent(true);
+    
+    try {
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (activeProfile.apiKey && activeProfile.apiKey.trim() !== '') {
+        headers['Authorization'] = `Bearer ${activeProfile.apiKey}`;
+      }
+      
+      let url = activeProfile.baseUrl.endsWith('/') ? activeProfile.baseUrl.slice(0, -1) : activeProfile.baseUrl;
+      if (!url.endsWith('/chat/completions') && activeProfile.provider !== 'ollama') {
+        url = `${url}/chat/completions`;
+      }
+      
+      if (activeProfile.provider === 'ollama' && !url.endsWith('/api/chat')) {
+        url = `${url}/api/chat`; // Ollama standard API
+      }
+
+      const metaAgent = FIXED_AGENTS.find(a => a.id === 'agent_meta');
+
+      const body = {
+        model: activeProfile.model,
+        messages: [
+          { role: 'system', content: metaAgent?.systemPrompt || 'Eres un experto Creador de Agentes de IA.' },
+          { role: 'user', content: agentDescription }
+        ],
+        stream: false
+      };
+
+      const res = await (window as any).electronAPI.systemFetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+
+      if (res.success && res.data) {
+        let generatedPrompt = '';
+        if (activeProfile.provider === 'ollama') {
+          generatedPrompt = res.data.message?.content || '';
+        } else {
+          generatedPrompt = res.data.choices?.[0]?.message?.content || '';
+        }
+
+        if (generatedPrompt) {
+          const newAgent: AiAgent = {
+            id: `agent_${Date.now()}`,
+            name: 'Nuevo Agente Generado',
+            systemPrompt: generatedPrompt.trim()
+          };
+          setSettingsForm({...settingsForm, aiAgents: [...(settingsForm.aiAgents || []), newAgent]});
+          setEditingAgentId(newAgent.id);
+          setShowAgentGenerator(false);
+          setAgentDescription('');
+        } else {
+          alert('La IA no devolvió un prompt válido.');
+        }
+      } else {
+        alert('Error al conectar con la IA: ' + (res.error || 'Desconocido'));
+      }
+    } catch (e: any) {
+      alert('Error en la generación: ' + e.message);
+    } finally {
+      setIsGeneratingAgent(false);
+    }
+  };
 
   const handleExport = async () => {
     try {
@@ -752,23 +956,35 @@ function App() {
           
           {vaultStatus === 'checking' && <p>{t('vaultChecking', settings.language)}</p>}
           
-          {vaultStatus === 'selecting' && (
+          {vaultStatus === 'selecting' && !vaultToDelete && (
             <div>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '15px' }}>{t('selectVault', settings.language)}:</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {vaultsList.map(v => (
-                  <button 
-                    key={v.id} 
-                    onClick={() => { 
-                      setCurrentVaultId(v.id); 
-                      setVaultStatus('locked'); 
-                      setMasterPassword('');
-                      setVaultError('');
-                    }}
-                    style={{ padding: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}
-                  >
-                    🔐 {v.name}
-                  </button>
+                  <div key={v.id} style={{ display: 'flex', gap: '5px' }}>
+                    <button 
+                      onClick={() => { 
+                        setCurrentVaultId(v.id); 
+                        setVaultStatus('locked'); 
+                        setMasterPassword('');
+                        setVaultError('');
+                      }}
+                      style={{ flex: 1, padding: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}
+                    >
+                      🔐 {v.name}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVaultToDelete(v);
+                        setDeleteVaultNameInput('');
+                      }}
+                      title={t('deleteVaultTitle', settings.language)}
+                      style={{ width: '45px', padding: '12px', backgroundColor: 'var(--bg-input)', color: '#ff4d4f', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', textAlign: 'center', fontSize: '1.2rem' }}
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 ))}
                 <button 
                   onClick={() => { 
@@ -782,6 +998,46 @@ function App() {
                   style={{ marginTop: '10px', padding: '10px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px dashed var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
                 >
                   + {t('createNewVault', settings.language)}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {vaultStatus === 'selecting' && vaultToDelete && (
+            <div>
+              <h3 style={{ color: '#ff4d4f', marginTop: 0 }}>{t('deleteVaultTitle', settings.language)}: {vaultToDelete.name}</h3>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
+                {t('deleteVaultConfirmMsg', settings.language)} <strong style={{ color: 'var(--text-main)' }}>{vaultToDelete.name}</strong>
+              </p>
+              <input
+                type="text"
+                value={deleteVaultNameInput}
+                onChange={(e) => setDeleteVaultNameInput(e.target.value)}
+                placeholder={vaultToDelete.name}
+                style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid #ff4d4f', borderRadius: '4px', marginBottom: '15px' }}
+              />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={() => setVaultToDelete(null)}
+                  style={{ flex: 1, padding: '10px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {t('cancel', settings.language)}
+                </button>
+                <button 
+                  disabled={deleteVaultNameInput !== vaultToDelete.name}
+                  onClick={() => {
+                    if (deleteVaultNameInput === vaultToDelete.name) {
+                      localStorage.removeItem(`kx_vault_data_${vaultToDelete.id}`);
+                      localStorage.removeItem(`kx_folders_${vaultToDelete.id}`);
+                      const updatedVaults = vaultsList.filter(v => v.id !== vaultToDelete.id);
+                      localStorage.setItem('kx_vaults_index', JSON.stringify(updatedVaults));
+                      setVaultsList(updatedVaults);
+                      setVaultToDelete(null);
+                    }
+                  }}
+                  style={{ flex: 1, padding: '10px', backgroundColor: deleteVaultNameInput === vaultToDelete.name ? '#ff4d4f' : 'var(--bg-panel)', color: deleteVaultNameInput === vaultToDelete.name ? '#fff' : 'var(--text-muted)', border: '1px solid #ff4d4f', borderRadius: '4px', cursor: deleteVaultNameInput === vaultToDelete.name ? 'pointer' : 'not-allowed', fontWeight: 'bold' }}
+                >
+                  {t('deleteVaultAction', settings.language)}
                 </button>
               </div>
             </div>
@@ -1001,6 +1257,23 @@ function App() {
 
         </div>
         
+        {/* Support Button */}
+        <div 
+          onClick={() => {
+            if (typeof (window as any).electronAPI.openExternal === 'function') {
+              (window as any).electronAPI.openExternal('https://ko-fi.com/kapssco');
+            } else {
+              window.open('https://ko-fi.com/kapssco', '_blank');
+            }
+          }}
+          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s', color: '#ff5e5b' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+        >
+          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>☕</span>
+          <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Support VinTerm</span>
+        </div>
+        
         {/* Switch Vault Button */}
         <div 
           onClick={() => {
@@ -1083,8 +1356,17 @@ function App() {
       {/* Settings Modal */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'var(--overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--bg-panel)', borderRadius: '8px', width: '650px', height: 'auto', minHeight: '450px', maxHeight: '90vh', border: '1px solid var(--border-color)', display: 'flex', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: 'var(--bg-panel)', borderRadius: '8px', width: '80vw', maxWidth: '900px', height: '80vh', minHeight: '500px', maxHeight: '90vh', border: '1px solid var(--border-color)', display: 'flex', overflow: 'hidden', position: 'relative' }}>
             
+            <button 
+              type="button" 
+              onClick={() => setShowSettingsModal(false)}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', zIndex: 10 }}
+              title={t('cancel', settings.language)}
+            >
+              ✕
+            </button>
+
             {/* Sidebar Tabs */}
             <div style={{ width: '180px', backgroundColor: 'var(--bg-input)', borderRight: '1px solid var(--border-light)', padding: '20px 0' }}>
               <h3 style={{ marginTop: 0, padding: '0 20px', fontSize: '1.1rem' }}>{t('settingsTitle', settings.language)}</h3>
@@ -1106,6 +1388,12 @@ function App() {
                   style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'ai' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'ai' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'ai' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
                 >
                   Vincent AI
+                </li>
+                <li 
+                  onClick={() => setActiveSettingsTab('agents')}
+                  style={{ padding: '12px 20px', cursor: 'pointer', backgroundColor: activeSettingsTab === 'agents' ? 'var(--accent)' : 'transparent', color: activeSettingsTab === 'agents' ? 'var(--button-text)' : 'var(--text-main)', borderLeft: activeSettingsTab === 'agents' ? '3px solid var(--neon-green, #00ff00)' : '3px solid transparent', transition: 'all 0.2s' }}
+                >
+                  Agentes
                 </li>
                 <li 
                   onClick={() => setActiveSettingsTab('security')}
@@ -1206,60 +1494,335 @@ function App() {
                 {/* AI COPILOT TAB */}
                 {activeSettingsTab === 'ai' && (
                   <>
-                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>Vincent AI</h2>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>Selecciona tu proveedor de inteligencia artificial.</p>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', color: 'var(--neon-green, #00ff00)' }}>Vincent AI - {t('aiProfiles', settings.language)}</h2>
                     
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Proveedor (Provider):</label>
-                      <select 
-                        value={settingsForm.aiProvider || 'openai'} 
-                        onChange={e => {
-                          const provider = e.target.value as 'openai' | 'ollama' | 'deepseek' | 'custom';
-                          let updates: any = { aiProvider: provider };
-                          if (provider === 'openai') {
-                            updates.aiBaseUrl = 'https://api.openai.com/v1';
-                            updates.aiModel = 'gpt-4o-mini';
-                          } else if (provider === 'ollama') {
-                            updates.aiBaseUrl = 'http://localhost:11434/v1';
-                            updates.aiModel = 'llama3';
-                          } else if (provider === 'deepseek') {
-                            updates.aiBaseUrl = 'https://api.deepseek.com/v1';
-                            updates.aiModel = 'deepseek-chat';
-                          }
-                          setSettingsForm({...settingsForm, ...updates});
-                        }} 
-                        style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }}
-                      >
-                        <option value="openai">OpenAI (ChatGPT)</option>
-                        <option value="ollama">Ollama (Local)</option>
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="custom">Personalizado (LMStudio, Groq, etc)</option>
-                      </select>
-                    </div>
+                    {!editingProfileId ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        {settingsForm.aiProfiles?.map((profile) => (
+                          <div key={profile.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--border-light)', padding: '15px', borderRadius: '8px', backgroundColor: 'var(--bg-input)' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>{profile.name}</div>
+                              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{profile.provider} {profile.model ? `- ${profile.model}` : ''}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button 
+                                onClick={() => setEditingProfileId(profile.id)}
+                                style={{ padding: '6px 12px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                              >
+                                Editar
+                              </button>
+                              {settingsForm.aiProfiles && settingsForm.aiProfiles.length > 1 && (
+                                <button 
+                                  onClick={() => {
+                                    if(confirm('¿Eliminar este perfil?')) {
+                                      const updatedProfiles = settingsForm.aiProfiles?.filter(p => p.id !== profile.id);
+                                      setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                    }
+                                  }}
+                                  style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: '4px', cursor: 'pointer' }}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const newProfile: AiProfile = {
+                              id: `profile_${Date.now()}`,
+                              name: 'Nuevo Perfil',
+                              provider: 'custom',
+                              baseUrl: '',
+                              apiKey: '',
+                              model: ''
+                            };
+                            setSettingsForm({...settingsForm, aiProfiles: [...(settingsForm.aiProfiles || []), newProfile]});
+                            setEditingProfileId(newProfile.id);
+                          }}
+                          style={{ padding: '10px', backgroundColor: 'transparent', color: 'var(--accent)', border: '1px dashed var(--accent)', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          + {t('addProfile', settings.language)}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <button 
+                          onClick={() => setEditingProfileId(null)}
+                          style={{ alignSelf: 'flex-start', padding: '6px 12px', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}
+                        >
+                          &larr; Volver a la lista
+                        </button>
+                        
+                        {(() => {
+                          const index = settingsForm.aiProfiles?.findIndex(p => p.id === editingProfileId) ?? -1;
+                          if (index === -1) return null;
+                          const profile = settingsForm.aiProfiles![index];
+                          
+                          return (
+                            <div style={{ border: '1px solid var(--border-light)', padding: '15px', borderRadius: '8px', backgroundColor: 'var(--bg-input)' }}>
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Nombre del Perfil</label>
+                                <input 
+                                  type="text" 
+                                  value={profile.name} 
+                                  onChange={e => {
+                                    const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                    updatedProfiles[index].name = e.target.value;
+                                    setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                  }} 
+                                  style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', fontWeight: 'bold' }}
+                                />
+                              </div>
 
-                    <div style={{ marginTop: '15px' }}>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Base URL:</label>
-                      <input 
-                        type="text" 
-                        value={settingsForm.aiBaseUrl || ''} 
-                        onChange={e => setSettingsForm({...settingsForm, aiBaseUrl: e.target.value})} 
-                        readOnly={settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek'}
-                        placeholder="https://api.openai.com/v1" 
-                        style={{ width: '100%', padding: '8px', backgroundColor: (settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek') ? 'rgba(0,0,0,0.2)' : 'var(--bg-input)', border: '1px solid var(--border-light)', color: (settingsForm.aiProvider === 'openai' || settingsForm.aiProvider === 'deepseek') ? 'var(--text-muted)' : 'var(--text-main)', borderRadius: '4px' }} 
-                      />
-                    </div>
-                    
-                    {settingsForm.aiProvider !== 'ollama' && (
-                      <div style={{ marginTop: '15px' }}>
-                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>API Key:</label>
-                        <input type="password" value={settingsForm.aiApiKey || ''} onChange={e => setSettingsForm({...settingsForm, aiApiKey: e.target.value})} placeholder="sk-..." style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('aiProvider', settings.language)}</label>
+                                  <select 
+                                    value={profile.provider} 
+                                    onChange={e => {
+                                      const provider = e.target.value as 'openai' | 'ollama' | 'deepseek' | 'custom';
+                                      const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                      updatedProfiles[index].provider = provider;
+                                      if (provider === 'openai') {
+                                        updatedProfiles[index].baseUrl = 'https://api.openai.com/v1';
+                                        updatedProfiles[index].model = 'gpt-4o-mini';
+                                      } else if (provider === 'ollama') {
+                                        updatedProfiles[index].baseUrl = 'http://localhost:11434/v1';
+                                        updatedProfiles[index].model = 'llama3';
+                                      } else if (provider === 'deepseek') {
+                                        updatedProfiles[index].baseUrl = 'https://api.deepseek.com/v1';
+                                        updatedProfiles[index].model = 'deepseek-chat';
+                                      }
+                                      setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                    }} 
+                                    style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                  >
+                                    <option value="openai">OpenAI (ChatGPT)</option>
+                                    <option value="ollama">Ollama (Local)</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="custom">Custom (LMStudio, Groq, OpenCode)</option>
+                                  </select>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Modelo (Model)</label>
+                                  {profileModels[profile.id] && profileModels[profile.id].length > 0 ? (
+                                    <select 
+                                      value={profile.model} 
+                                      onChange={e => {
+                                        const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                        updatedProfiles[index].model = e.target.value;
+                                        setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                      }} 
+                                      style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                    >
+                                      {profileModels[profile.id].map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                  ) : (
+                                    <input 
+                                      type="text" 
+                                      value={profile.model} 
+                                      onChange={e => {
+                                        const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                        updatedProfiles[index].model = e.target.value;
+                                        setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                      }} 
+                                      style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Base URL</label>
+                                <input 
+                                  type="text" 
+                                  value={profile.baseUrl} 
+                                  onChange={e => {
+                                    const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                    updatedProfiles[index].baseUrl = e.target.value;
+                                    setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                  }} 
+                                  readOnly={profile.provider === 'openai' || profile.provider === 'deepseek'}
+                                  style={{ width: '100%', padding: '8px', backgroundColor: (profile.provider === 'openai' || profile.provider === 'deepseek') ? 'rgba(0,0,0,0.2)' : 'var(--bg-panel)', border: '1px solid var(--border-color)', color: (profile.provider === 'openai' || profile.provider === 'deepseek') ? 'var(--text-muted)' : 'var(--text-main)', borderRadius: '4px' }}
+                                />
+                              </div>
+
+                              {profile.provider !== 'ollama' && (
+                                <div style={{ marginBottom: '15px' }}>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>API Key</label>
+                                  <input 
+                                    type="password" 
+                                    value={profile.apiKey} 
+                                    onChange={e => {
+                                      const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                      updatedProfiles[index].apiKey = e.target.value;
+                                      setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                    }} 
+                                    style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                  />
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
+                                <div>
+                                  {profileTestStatus[profile.id] === 'testing' && <span style={{ color: 'var(--text-muted)' }}>{t('testing', settings.language)}</span>}
+                                  {profileTestStatus[profile.id] === 'success' && <span style={{ color: 'var(--neon-green, #00ff00)', fontWeight: 'bold' }}>✅ {t('testSuccess', settings.language)}</span>}
+                                  {profileTestStatus[profile.id] === 'error' && <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>❌ {t('testFailed', settings.language)}</span>}
+                                </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => testAiProfile(profile)}
+                                  disabled={profileTestStatus[profile.id] === 'testing'}
+                                  style={{ padding: '8px 16px', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: profileTestStatus[profile.id] === 'testing' ? 'not-allowed' : 'pointer' }}
+                                >
+                                  {t('testConnection', settings.language)}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
+                  </>
+                )}
 
-                    <div style={{ marginTop: '15px' }}>
-                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Modelo (Model):</label>
-                      <input type="text" value={settingsForm.aiModel || ''} onChange={e => setSettingsForm({...settingsForm, aiModel: e.target.value})} placeholder="gpt-4o-mini" style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                    </div>
+                {/* AGENTS TAB */}
+                {activeSettingsTab === 'agents' && (
+                  <>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>Agentes de IA</h2>
+                    
+                    {!editingAgentId ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        {(settingsForm.aiAgents || []).map((agent) => (
+                          <div key={agent.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--border-light)', padding: '15px', borderRadius: '8px', backgroundColor: 'var(--bg-input)' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px' }}>{agent.name}</div>
+                              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{agent.systemPrompt.slice(0, 60)}...</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button 
+                                onClick={() => setEditingAgentId(agent.id)}
+                                style={{ padding: '6px 12px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                              >
+                                Editar
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  if (confirm('¿Seguro que quieres eliminar este agente?')) {
+                                    const newAgents = (settingsForm.aiAgents || []).filter(a => a.id !== agent.id);
+                                    setSettingsForm({...settingsForm, aiAgents: newAgents});
+                                  }
+                                }}
+                                style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: '4px', cursor: 'pointer' }}
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {!showAgentGenerator ? (
+                          <button 
+                            type="button"
+                            disabled={!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0}
+                            onClick={() => setShowAgentGenerator(true)}
+                            style={{ padding: '10px', backgroundColor: 'transparent', color: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'var(--text-muted)' : 'var(--accent)', border: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? '1px dashed var(--text-muted)' : '1px dashed var(--accent)', borderRadius: '4px', cursor: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                            title={(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'Debes configurar un Perfil de IA primero' : 'Crear nuevo Agente'}
+                          >
+                            + Añadir Agente {(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) && '(Requiere Perfil IA)'}
+                          </button>
+                        ) : (
+                          <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--accent)', borderRadius: '6px' }}>
+                            <h3 style={{ marginTop: 0, fontSize: '1rem', color: 'var(--accent)' }}>Generador Automático de Agentes</h3>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
+                              Describe el rol, personalidad o tarea que necesitas. Nuestro Meta-Agente se conectará usando tu perfil activo y creará el System Prompt ideal.
+                            </p>
+                            <textarea
+                              value={agentDescription}
+                              onChange={(e) => setAgentDescription(e.target.value)}
+                              placeholder="Ej: Necesito un experto en Docker que me responda siempre con comandos directos y seguros para entornos de producción..."
+                              style={{ width: '100%', minHeight: '80px', padding: '10px', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', marginBottom: '15px', resize: 'vertical' }}
+                              disabled={isGeneratingAgent}
+                            />
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                              <button 
+                                type="button" 
+                                onClick={() => { setShowAgentGenerator(false); setAgentDescription(''); }}
+                                style={{ padding: '8px 16px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
+                                disabled={isGeneratingAgent}
+                              >
+                                Cancelar
+                              </button>
+                              <button 
+                                type="button" 
+                                onClick={handleGenerateAgent}
+                                style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: isGeneratingAgent ? 'not-allowed' : 'pointer' }}
+                                disabled={isGeneratingAgent || !agentDescription.trim()}
+                              >
+                                {isGeneratingAgent ? 'Generando Prompt...' : 'Generar Agente'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <button 
+                          onClick={() => setEditingAgentId(null)}
+                          style={{ alignSelf: 'flex-start', padding: '6px 12px', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}
+                        >
+                          &larr; Volver a la lista
+                        </button>
+                        
+                        {(() => {
+                          const index = settingsForm.aiAgents?.findIndex(a => a.id === editingAgentId) ?? -1;
+                          if (index === -1) return null;
+                          const agent = settingsForm.aiAgents![index];
+                          
+                          return (
+                            <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Nombre del Agente</label>
+                                <input 
+                                  type="text" 
+                                  value={agent.name} 
+                                  onChange={e => {
+                                    const newAgents = [...(settingsForm.aiAgents || [])];
+                                    newAgents[index].name = e.target.value;
+                                    setSettingsForm({...settingsForm, aiAgents: newAgents});
+                                  }} 
+                                  style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', fontWeight: 'bold' }}
+                                />
+                              </div>
+
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>System Prompt</label>
+                                  <textarea 
+                                    value={agent.systemPrompt} 
+                                    onChange={e => {
+                                      const newAgents = [...(settingsForm.aiAgents || [])];
+                                      newAgents[index].systemPrompt = e.target.value;
+                                      setSettingsForm({...settingsForm, aiAgents: newAgents});
+                                    }} 
+                                    style={{ width: '100%', minHeight: '300px', resize: 'vertical', padding: '12px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', fontFamily: 'inherit', fontSize: '1rem', lineHeight: '1.4', marginBottom: '15px' }}
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  <button 
+                                    onClick={() => setEditingAgentId(null)}
+                                    style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                                  >
+                                    Guardar y Volver a la Lista
+                                  </button>
+                                </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -1363,9 +1926,14 @@ function App() {
                 
                 <div style={{ flex: 1 }}></div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '15px', borderTop: '1px solid var(--border-light)' }}>
-                  <button type="button" onClick={() => setShowSettingsModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
-                  <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('saveSettings', settings.language)}</button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '15px', borderTop: '1px solid var(--border-light)' }}>
+                  <div>
+                    {settingsSaveSuccess && <span style={{ color: 'var(--neon-green, #00ff00)', fontSize: '0.9rem', fontWeight: 'bold' }}>{settings.language === 'es' ? '¡Guardado exitoso!' : 'Successfully saved!'}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button type="button" onClick={() => setShowSettingsModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
+                    <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('saveSettings', settings.language)}</button>
+                  </div>
                 </div>
               </form>
             </div>

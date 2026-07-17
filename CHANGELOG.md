@@ -17,9 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic Screenshot Gallery**: A fully responsive, interactive carousel implemented on the landing page to showcase the application.
 - **Comprehensive i18n Support**: Spanish and English translations extended to all UI error messages, tooltips, and SSH connection validations.
 - **Vincent AI**: The 'AI Copilot' feature has been fully integrated and officially rebranded as 'Vincent AI' across the platform.
-
+- **Custom AI Agents**: Create and edit custom AI personas directly from the application settings.
+- **Magic Agent Generator**: Generate highly effective System Prompts automatically using natural language via the active AI Profile.
+- **Master-Detail Settings**: Upgraded the settings UI for AI Profiles and Agents to use a clean master-detail view, with a wider modal window.
 ### Changed
 - **Error Visuals**: Redesigned UI error messages to use a high-contrast vivid red (`#ff4444`) font style instead of dark backgrounds.
+- **Settings Modal UI**: Expanded the settings window to 80vw for an improved editing experience.
 - **Landing Page Hierarchy**: Reordered landing page features to prioritize Artificial Intelligence and Military-Grade Security over aesthetic features, including new 'Zero Trust' and 'Community' cards.
 
 ### Security

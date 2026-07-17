@@ -40,11 +40,33 @@ declare global {
 
 export {};
 
+export interface AiProfile {
+  id: string;
+  name: string;
+  provider: 'openai' | 'ollama' | 'deepseek' | 'custom';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export interface AiAgent {
+  id: string;
+  name: string;
+  systemPrompt: string;
+}
+
 export interface TerminalSettings {
   fontFamily: string;
   fontSize: number;
   foreground: string;
   background: string;
+  language?: 'en' | 'es';
+  aiProfiles?: AiProfile[];
+  activeAiProfileId?: string;
+  aiAgents?: AiAgent[];
+  activeAiAgentId?: string;
+  
+  // Legacy
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
@@ -669,11 +691,37 @@ type ChatSession = {
   messages: ChatMessage[];
 };
 
+const FIXED_AGENTS: AiAgent[] = [
+  {
+    id: 'agent_devops',
+    name: 'Vincent AI (DevOps)',
+    systemPrompt: 'Eres Vincent AI, un ingeniero DevOps y SysAdmin Senior de élite experto en servidores Linux, redes y entornos de consola. Tu objetivo es ayudar al usuario a administrar su sistema y resolver problemas con la máxima eficiencia y seguridad.'
+  },
+  {
+    id: 'agent_meta',
+    name: 'Creador de Agentes (Meta)',
+    systemPrompt: 'Eres un experto Creador de Agentes de IA. El usuario te dará una descripción en lenguaje natural de la personalidad, rol o tarea que necesita automatizar. Tu trabajo es responder ÚNICAMENTE con el "System Prompt" ideal, detallado y altamente efectivo que el usuario debe configurar para ese nuevo agente. No incluyas saludos ni explicaciones, solo devuelve el texto del System Prompt listo para copiar y pegar.'
+  }
+];
+
 const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id: string, isActive: boolean, onClose?: () => void, settings: TerminalSettings, getTerminalContext?: () => string }) => {
-  const apiKey = settings?.aiApiKey || '';
-  const baseUrl = settings?.aiBaseUrl || 'https://api.openai.com/v1';
-  const model = settings?.aiModel || 'gpt-4o-mini';
-  const provider = settings?.aiProvider || 'openai';
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(settings?.activeAiProfileId || '');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(settings?.activeAiAgentId || '');
+  
+  const activeProfile = settings?.aiProfiles?.find(p => p.id === (selectedProfileId || settings?.activeAiProfileId)) 
+    || settings?.aiProfiles?.[0] 
+    || { provider: settings?.aiProvider || 'openai', baseUrl: settings?.aiBaseUrl || 'https://api.openai.com/v1', apiKey: settings?.aiApiKey || '', model: settings?.aiModel || 'gpt-4o-mini', name: 'Legacy', id: 'legacy' };
+
+  const allAgents = [...FIXED_AGENTS, ...(settings?.aiAgents || [])];
+  
+  const activeAgent = allAgents.find(a => a.id === (selectedAgentId || settings?.activeAiAgentId))
+    || FIXED_AGENTS[0];
+
+
+  const apiKey = activeProfile.apiKey;
+  const baseUrl = activeProfile.baseUrl;
+  const model = activeProfile.model;
+  const provider = activeProfile.provider;
   
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -749,12 +797,16 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
     
     const fetchModels = async () => {
       setFetchingModels(true);
+      setAvailableModels([]); // clear old models
       try {
         if (provider === 'ollama') {
-          const res = await fetch('http://localhost:11434/api/tags');
-          if (res.ok && mounted) {
-            const data = await res.json();
-            if (data.models) setAvailableModels(data.models.map((m: any) => m.name));
+          const res = await (window as any).electronAPI.runOllamaList();
+          if (res.success && mounted) {
+            const lines = res.data.split('\n').filter((l: string) => l.trim() !== '');
+            const models = lines.slice(1).map((l: string) => l.split(/\s+/)[0]);
+            if (models.length > 0) {
+              setAvailableModels(models);
+            }
           }
         } else {
           if (!apiKey && provider !== 'custom') return;
@@ -780,7 +832,7 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
       }
     };
     
-    if (availableModels.length === 0) fetchModels();
+    fetchModels();
     return () => { mounted = false; };
   }, [isActive, provider, baseUrl, apiKey]);
 
@@ -847,9 +899,9 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
       const headers: any = { 'Content-Type': 'application/json' };
       if (apiKey.trim()) headers['Authorization'] = `Bearer ${apiKey}`;
       
-      let systemPrompt = `Eres Vincent AI, un ingeniero DevOps y SysAdmin Senior de élite experto en servidores Linux, redes y entornos de consola. Tu objetivo es ayudar al usuario a administrar su sistema y resolver problemas con la máxima eficiencia y seguridad.
-
-REGLAS ESTRICTAS:
+      let systemPrompt = activeAgent.systemPrompt;
+      
+      systemPrompt += `\n\nREGLAS ESTRICTAS DEL ENTORNO:
 1. Responde SIEMPRE con comandos bash listos para ser ejecutados.
 2. Si necesitas dar explicaciones, advertencias o contexto, DEBES escribir esas líneas comentadas (empezando con "#") para que la respuesta completa pueda ser ejecutada en la terminal sin errores de sintaxis.
 3. NUNCA uses bloques de código markdown (\`\`\`) ni comillas invertidas.
@@ -873,7 +925,14 @@ REGLAS ESTRICTAS:
         { role: 'user', content: textToSubmit }
       ];
       
-      const res = await fetch(`${baseUrl}/chat/completions`, {
+      let fetchUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+      if (provider === 'ollama' && !fetchUrl.endsWith('/v1')) {
+          if (fetchUrl.endsWith('/api')) fetchUrl = fetchUrl.slice(0, -4);
+          fetchUrl = fetchUrl + '/v1';
+      }
+      if (fetchUrl.endsWith('/chat/completions')) fetchUrl = fetchUrl.replace('/chat/completions', '');
+      
+      const res = await (window as any).electronAPI.systemFetch(`${fetchUrl}/chat/completions`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -883,12 +942,11 @@ REGLAS ESTRICTAS:
         })
       });
       
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error?.message || 'Error fetching response');
+      if (!res.success) {
+        throw new Error(res.message || 'Error fetching response');
       }
       
-      const data = await res.json();
+      const data = res.data;
       const content = data.choices[0].message.content;
       const cleaned = content.replace(/^\s*```(bash|sh)?/gm, '').replace(/```\s*$/gm, '').trim();
       
@@ -949,9 +1007,11 @@ REGLAS ESTRICTAS:
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', padding: '12px', borderLeft: '1px solid var(--border-light)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--neon-green, #00ff00)' }}>
-          <VscSparkle /> Vincent AI
-        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--neon-green, #00ff00)' }}>
+            <VscSparkle /> Vincent AI
+          </h3>
+        </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <SvgIcon color="var(--text-muted)" hoverColor="var(--text-main)" onClick={() => setShowHistory(!showHistory)} title="Ver Historial">
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
@@ -1045,25 +1105,60 @@ REGLAS ESTRICTAS:
                   <button onClick={() => setIsAutoLooping(false)} style={{ padding: '2px 8px', backgroundColor: '#f48771', color: '#000', border: 'none', borderRadius: '2px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}>DETENER</button>
                 </div>
               )}
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  <span>Modelo:</span>
-                  {availableModels.length > 0 ? (
-                    <select 
-                      value={selectedModel} 
-                      onChange={(e) => setSelectedModel(e.target.value)}
-                      style={{ 
-                        backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-color)', 
-                        borderRadius: '4px', fontSize: '10px', padding: '2px', outline: 'none', maxWidth: '100px'
-                      }}
-                    >
-                      {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  ) : (
-                    <strong style={{ color: 'var(--text-main)' }}>{fetchingModels ? 'Cargando...' : selectedModel}</strong>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {settings?.aiProfiles && settings.aiProfiles.length > 1 && (
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <span>Perfil:</span>
+                      <select 
+                        value={activeProfile.id}
+                        onChange={(e) => setSelectedProfileId(e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', maxWidth: '200px', textOverflow: 'ellipsis' }}
+                      >
+                        {settings.aiProfiles.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} ({p.provider})</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
+                  
+                  {allAgents.length > 0 && (
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <span>Agente:</span>
+                      <select 
+                        value={selectedAgentId || activeAgent.id}
+                        onChange={(e) => setSelectedAgentId(e.target.value)}
+                        style={{ padding: '2px 4px', fontSize: '12px', backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', maxWidth: '200px', textOverflow: 'ellipsis' }}
+                      >
+                        {allAgents.filter(a => a.id !== 'agent_meta').map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <span>Modelo:</span>
+                    {availableModels.length > 0 ? (
+                      <select 
+                        value={selectedModel} 
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        style={{ 
+                          backgroundColor: 'var(--bg-input)', color: 'var(--text-main)', border: '1px solid var(--border-color)', 
+                          borderRadius: '4px', fontSize: '12px', padding: '2px', outline: 'none', maxWidth: '200px', textOverflow: 'ellipsis'
+                        }}
+                      >
+                        {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    ) : (
+                      <strong style={{ color: 'var(--text-main)' }}>{fetchingModels ? 'Cargando...' : selectedModel}</strong>
+                    )}
+                  </div>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: autoMode ? 'var(--neon-green, #00ff00)' : 'var(--text-muted)' }}>
+                <label 
+                  title="Si está activado, la IA ejecutará comandos en la terminal y leerá el resultado de forma autónoma hasta resolver la tarea."
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'help', color: autoMode ? 'var(--neon-green, #00ff00)' : 'var(--text-muted)' }}
+                >
                   <input type="checkbox" checked={autoMode} onChange={e => { setAutoMode(e.target.checked); if(!e.target.checked) setIsAutoLooping(false); }} style={{ margin: 0, cursor: 'pointer' }} />
                   Auto-run
                 </label>

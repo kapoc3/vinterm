@@ -329,6 +329,11 @@ ipcMain.handle('dialog.showMessageBox', async (event, options: any) => {
 });
 
 
+ipcMain.handle('system.openExternal', async (event, url: string) => {
+  await electronShell.openExternal(url);
+  return true;
+});
+
 ipcMain.handle('dialog.openImportFile', async () => {
   if (!mainWindow) return { success: false, message: 'No main window' };
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -692,5 +697,35 @@ ipcMain.handle('vault.decrypt', async (event, cipherText: string, masterPass: st
     return { success: true, data: decrypted };
   } catch (e: any) {
     return { success: false, message: 'Decryption failed (Wrong password or corrupted data)' };
+  }
+});
+
+// --- System ---
+ipcMain.handle('system.runOllamaList', async () => {
+  return new Promise((resolve) => {
+    exec('ollama list', (err, stdout, stderr) => {
+      if (err) {
+        return resolve({ success: false, message: stderr || err.message });
+      }
+      resolve({ success: true, data: stdout });
+    });
+  });
+});
+
+ipcMain.handle('system.fetch', async (event, url: string, options: any) => {
+  try {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) {}
+    
+    return {
+      success: res.ok,
+      status: res.status,
+      data: json || text,
+      message: res.ok ? 'OK' : (json?.error?.message || text || 'Error')
+    };
+  } catch (e: any) {
+    return { success: false, message: e.message };
   }
 });

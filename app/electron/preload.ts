@@ -28,12 +28,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSshStats: (id: string) => ipcRenderer.invoke('ssh.getStats', id),
   
   // System/Dialogs
+  openExternal: (url: string) => ipcRenderer.invoke('system.openExternal', url),
   getFonts: () => ipcRenderer.invoke('system.getFonts'),
   selectFile: () => ipcRenderer.invoke('dialog.selectFile'),
   selectUploadFiles: () => ipcRenderer.invoke('dialog.selectUploadFiles'),
   saveExportFile: (data: string) => ipcRenderer.invoke('dialog.saveExportFile', data),
   openImportFile: () => ipcRenderer.invoke('dialog.openImportFile'),
   showMessageBox: (options: any) => ipcRenderer.invoke('dialog.showMessageBox', options),
+  runOllamaList: () => ipcRenderer.invoke('system.runOllamaList'),
+  systemFetch: (url: string, options: any) => ipcRenderer.invoke('system.fetch', url, options),
   
   // Vault
   vaultEncrypt: (text: string, masterPass: string) => ipcRenderer.invoke('vault.encrypt', text, masterPass),
