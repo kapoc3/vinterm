@@ -802,7 +802,32 @@ ipcMain.handle('vault.decrypt', async (event, cipherText: string, masterPass: st
 // --- System ---
 ipcMain.handle('system.runOllamaList', async () => {
   return new Promise((resolve) => {
-    exec('ollama list', (err, stdout, stderr) => {
+    const homeDir = os.homedir();
+    let ollamaPath = 'ollama'; // Default to PATH
+
+    // Platform-specific checks
+    if (process.platform === 'win32') {
+      const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+      const winPath = path.join(localAppData, 'Programs', 'Ollama', 'ollama.exe');
+      if (fs.existsSync(winPath)) {
+        ollamaPath = `"${winPath}"`;
+      }
+    } else if (process.platform === 'darwin') {
+      const macPathApp = '/Applications/Ollama.app/Contents/Resources/ollama';
+      const macPathBrew = '/opt/homebrew/bin/ollama';
+      if (fs.existsSync(macPathApp)) {
+        ollamaPath = macPathApp;
+      } else if (fs.existsSync(macPathBrew)) {
+        ollamaPath = macPathBrew;
+      }
+    } else if (process.platform === 'linux') {
+      const linuxLocalPath = path.join(homeDir, 'ollama', 'bin', 'ollama');
+      if (fs.existsSync(linuxLocalPath)) {
+        ollamaPath = linuxLocalPath;
+      }
+    }
+
+    exec(`${ollamaPath} list`, (err, stdout, stderr) => {
       if (err) {
         return resolve({ success: false, message: stderr || err.message });
       }
@@ -810,6 +835,8 @@ ipcMain.handle('system.runOllamaList', async () => {
     });
   });
 });
+
+
 
 ipcMain.handle('system.fetch', async (event, url: string, options: any) => {
   try {
