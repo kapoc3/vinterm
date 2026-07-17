@@ -74,7 +74,8 @@
       "category": "Development",
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "snap"
       ]
     }
   }
