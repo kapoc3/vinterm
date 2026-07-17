@@ -7,6 +7,7 @@ import { FaJava, FaMicrochip, FaMemory, FaHdd } from 'react-icons/fa';
 import { VscFile, VscFolder, VscSettingsGear, VscSymbolKey, VscLock, VscArchive, VscSparkle } from 'react-icons/vsc';
 import { FcImageFile } from 'react-icons/fc';
 import 'xterm/css/xterm.css';
+import { t } from './i18n';
 
 declare global {
   interface Window {
@@ -681,6 +682,26 @@ const SftpViewer = ({ id, isActive, onClose }: { id: string, isActive: boolean, 
   );
 };
 
+const TypewriterText = ({ text, animate }: { text: string, animate: boolean }) => {
+  const [currentText, setCurrentText] = useState(animate ? '' : text);
+
+  useEffect(() => {
+    if (!animate) {
+      setCurrentText(text);
+      return;
+    }
+    
+    let i = 0;
+    const interval = setInterval(() => {
+      setCurrentText(text.substring(0, i + 1));
+      i++;
+      if (i >= text.length) clearInterval(interval);
+    }, 15);
+    return () => clearInterval(interval);
+  }, [text, animate]);
+
+  return <>{currentText}</>;
+};
 
 type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string; };
 
@@ -840,8 +861,22 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
+  const extractCommand = (content: string) => {
+    const match = content.match(/```(?:bash|sh|shell)?\n([\s\S]*?)```/);
+    if (match && match[1]) return match[1].trim();
+    return content.trim();
+  };
+
+  const isConversational = (content: string) => {
+    if (content.includes('```')) return false;
+    const lines = content.trim().split('\n');
+    if (lines.length > 4) return true;
+    if (/^[A-Z¿¡].*[.!?]$/.test(lines[0])) return true;
+    return false;
+  };
+
   const executeCommand = (cmd: string) => {
-    if (cmd) window.electronAPI.sendToTerminal(id, cmd + "\r");
+    if (cmd) window.electronAPI.sendToTerminal(id, extractCommand(cmd) + "\r");
   };
 
   const startCommandObserver = () => {
@@ -973,7 +1008,7 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
   };
 
   const insertCommand = (cmd: string) => {
-    if (cmd) window.electronAPI.sendToTerminal(id, cmd);
+    if (cmd) window.electronAPI.sendToTerminal(id, extractCommand(cmd));
   };
 
   const startNewChat = () => {
@@ -1076,16 +1111,20 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
                   <div style={{ 
                     padding: msg.role === 'system' ? '4px 8px' : '8px', 
                     backgroundColor: msg.role === 'user' ? 'var(--accent)' : (msg.role === 'system' ? 'transparent' : '#000'), 
-                    color: msg.role === 'user' ? 'var(--button-text)' : (msg.role === 'system' ? 'var(--text-muted)' : (msg.content.includes('✅') ? '#00e5ff' : 'var(--neon-green, #00ff00)')),
+                    color: msg.role === 'user' ? 'var(--button-text)' : (msg.role === 'system' ? 'var(--text-muted)' : (msg.content.includes('✅') ? '#00e5ff' : '#4ade80')),
                     border: msg.role === 'assistant' ? (msg.content.includes('✅') ? '1px solid #00e5ff' : '1px solid var(--border-color)') : 'none',
                     borderRadius: '4px', fontSize: msg.role === 'system' ? '10px' : '12px', 
                     fontStyle: msg.role === 'system' ? 'italic' : 'normal',
                     fontFamily: msg.role === 'assistant' ? (msg.content.includes('✅') ? 'inherit' : 'monospace') : 'inherit',
                     wordBreak: 'break-word', whiteSpace: 'pre-wrap' 
                   }}>
-                    {msg.content}
+                    {msg.role === 'assistant' ? (
+                      <TypewriterText text={msg.content} animate={i === messages.length - 1 && !msg.content.includes('✅') && !autoMode} />
+                    ) : (
+                      msg.content
+                    )}
                   </div>
-                  {msg.role === 'assistant' && !msg.content.includes('✅') && !autoMode && (
+                  {msg.role === 'assistant' && !msg.content.includes('✅') && !autoMode && !isConversational(msg.content) && (
                     <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                       <button onClick={() => insertCommand(msg.content)} style={{ flex: 1, padding: '4px', fontSize: '10px', backgroundColor: 'var(--bg-input)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '2px', cursor: 'pointer' }}>Insertar</button>
                       <button onClick={() => executeCommand(msg.content)} style={{ flex: 1, padding: '4px', fontSize: '10px', backgroundColor: 'var(--neon-green, #00ff00)', color: '#000', border: 'none', borderRadius: '2px', cursor: 'pointer', fontWeight: 'bold' }}>Ejecutar</button>
@@ -1109,7 +1148,7 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {settings?.aiProfiles && settings.aiProfiles.length > 1 && (
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <span>Perfil:</span>
+                      <span>{t('labelProfile', settings?.language || 'es')}</span>
                       <select 
                         value={activeProfile.id}
                         onChange={(e) => setSelectedProfileId(e.target.value)}
@@ -1124,7 +1163,7 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
                   
                   {allAgents.length > 0 && (
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <span>Agente:</span>
+                      <span>{t('labelAgent', settings?.language || 'es')}</span>
                       <select 
                         value={selectedAgentId || activeAgent.id}
                         onChange={(e) => setSelectedAgentId(e.target.value)}
@@ -1138,7 +1177,7 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
                   )}
 
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    <span>Modelo:</span>
+                    <span>{t('labelModel', settings?.language || 'es')}</span>
                     {availableModels.length > 0 ? (
                       <select 
                         value={selectedModel} 

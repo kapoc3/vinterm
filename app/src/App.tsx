@@ -417,7 +417,7 @@ function App() {
     // Find active AI Profile
     const activeProfile = settingsForm.aiProfiles?.find(p => p.id === settingsForm.activeAiProfileId) || settingsForm.aiProfiles?.[0];
     if (!activeProfile) {
-      alert("No hay perfiles de IA configurados.");
+      alert(t('alertNoAiProfiles', settingsForm.language));
       return;
     }
 
@@ -466,7 +466,7 @@ function App() {
         if (generatedPrompt) {
           const newAgent: AiAgent = {
             id: `agent_${Date.now()}`,
-            name: 'Nuevo Agente Generado',
+            name: t('newAgentGenerated', settingsForm.language),
             systemPrompt: generatedPrompt.trim()
           };
           setSettingsForm({...settingsForm, aiAgents: [...(settingsForm.aiAgents || []), newAgent]});
@@ -474,13 +474,13 @@ function App() {
           setShowAgentGenerator(false);
           setAgentDescription('');
         } else {
-          alert('La IA no devolvió un prompt válido.');
+          alert(t('alertInvalidPrompt', settingsForm.language));
         }
       } else {
-        alert('Error al conectar con la IA: ' + (res.error || 'Desconocido'));
+        alert(t('alertAiConnectionError', settingsForm.language) + (res.error || 'Unknown'));
       }
     } catch (e: any) {
-      alert('Error en la generación: ' + e.message);
+      alert(t('alertGenerationError', settingsForm.language) + e.message);
     } finally {
       setIsGeneratingAgent(false);
     }
@@ -1509,19 +1509,19 @@ function App() {
                                 onClick={() => setEditingProfileId(profile.id)}
                                 style={{ padding: '6px 12px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                               >
-                                Editar
+                                {t('btnEdit', settings.language)}
                               </button>
                               {settingsForm.aiProfiles && settingsForm.aiProfiles.length > 1 && (
                                 <button 
                                   onClick={() => {
-                                    if(confirm('¿Eliminar este perfil?')) {
+                                    if(confirm(t('confirmDeleteProfile', settings.language))) {
                                       const updatedProfiles = settingsForm.aiProfiles?.filter(p => p.id !== profile.id);
                                       setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
                                     }
                                   }}
                                   style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: '4px', cursor: 'pointer' }}
                                 >
-                                  Eliminar
+                                  {t('btnDelete', settings.language)}
                                 </button>
                               )}
                             </div>
@@ -1533,7 +1533,7 @@ function App() {
                           onClick={() => {
                             const newProfile: AiProfile = {
                               id: `profile_${Date.now()}`,
-                              name: 'Nuevo Perfil',
+                              name: t('defaultNewProfile', settings.language),
                               provider: 'custom',
                               baseUrl: '',
                               apiKey: '',
@@ -1553,7 +1553,7 @@ function App() {
                           onClick={() => setEditingProfileId(null)}
                           style={{ alignSelf: 'flex-start', padding: '6px 12px', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}
                         >
-                          &larr; Volver a la lista
+                          &larr; {t('btnBackToList', settings.language)}
                         </button>
                         
                         {(() => {
@@ -1564,7 +1564,7 @@ function App() {
                           return (
                             <div style={{ border: '1px solid var(--border-light)', padding: '15px', borderRadius: '8px', backgroundColor: 'var(--bg-input)' }}>
                               <div style={{ marginBottom: '15px' }}>
-                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Nombre del Perfil</label>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('profileName', settings.language)}</label>
                                 <input 
                                   type="text" 
                                   value={profile.name} 
@@ -1607,7 +1607,7 @@ function App() {
                                   </select>
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Modelo (Model)</label>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('labelModel', settings.language)}</label>
                                   {profileModels[profile.id] && profileModels[profile.id].length > 0 ? (
                                     <select 
                                       value={profile.model} 
@@ -1692,7 +1692,7 @@ function App() {
                 {/* AGENTS TAB */}
                 {activeSettingsTab === 'agents' && (
                   <>
-                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>Agentes de IA</h2>
+                    <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>{t('aiAgentsTab', settingsForm.language)}</h2>
                     
                     {!editingAgentId ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -1707,43 +1707,43 @@ function App() {
                                 onClick={() => setEditingAgentId(agent.id)}
                                 style={{ padding: '6px 12px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                               >
-                                Editar
+                                {t('btnEdit', settingsForm.language)}
                               </button>
                               <button 
                                 onClick={() => {
-                                  if (confirm('¿Seguro que quieres eliminar este agente?')) {
+                                  if (confirm(t('confirmDeleteAgent', settingsForm.language))) {
                                     const newAgents = (settingsForm.aiAgents || []).filter(a => a.id !== agent.id);
                                     setSettingsForm({...settingsForm, aiAgents: newAgents});
                                   }
                                 }}
                                 style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: '4px', cursor: 'pointer' }}
                               >
-                                Eliminar
+                                {t('btnDelete', settingsForm.language)}
                               </button>
                             </div>
                           </div>
                         ))}
                         
                         {!showAgentGenerator ? (
-                          <button 
-                            type="button"
-                            disabled={!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0}
-                            onClick={() => setShowAgentGenerator(true)}
-                            style={{ padding: '10px', backgroundColor: 'transparent', color: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'var(--text-muted)' : 'var(--accent)', border: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? '1px dashed var(--text-muted)' : '1px dashed var(--accent)', borderRadius: '4px', cursor: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
-                            title={(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'Debes configurar un Perfil de IA primero' : 'Crear nuevo Agente'}
-                          >
-                            + Añadir Agente {(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) && '(Requiere Perfil IA)'}
-                          </button>
-                        ) : (
-                          <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--accent)', borderRadius: '6px' }}>
-                            <h3 style={{ marginTop: 0, fontSize: '1rem', color: 'var(--accent)' }}>Generador Automático de Agentes</h3>
-                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
-                              Describe el rol, personalidad o tarea que necesitas. Nuestro Meta-Agente se conectará usando tu perfil activo y creará el System Prompt ideal.
-                            </p>
+                            <button 
+                              type="button"
+                              disabled={!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0}
+                              onClick={() => setShowAgentGenerator(true)}
+                              style={{ padding: '10px', backgroundColor: 'transparent', color: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'var(--text-muted)' : 'var(--accent)', border: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? '1px dashed var(--text-muted)' : '1px dashed var(--accent)', borderRadius: '4px', cursor: (!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                              title={(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) ? t('reqAiProfileTitle', settingsForm.language) : t('createNewAgentTitle', settingsForm.language)}
+                            >
+                              {t('btnAddAgent', settingsForm.language)} {(!settingsForm.aiProfiles || settingsForm.aiProfiles.length === 0) && t('reqAiProfile', settingsForm.language)}
+                            </button>
+                          ) : (
+                            <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--accent)', borderRadius: '6px' }}>
+                              <h3 style={{ marginTop: 0, fontSize: '1rem', color: 'var(--accent)' }}>{t('magicGenTitle', settingsForm.language)}</h3>
+                              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
+                                {t('magicGenDesc', settingsForm.language)}
+                              </p>
                             <textarea
                               value={agentDescription}
                               onChange={(e) => setAgentDescription(e.target.value)}
-                              placeholder="Ej: Necesito un experto en Docker que me responda siempre con comandos directos y seguros para entornos de producción..."
+                              placeholder={t('magicGenPlaceholder', settingsForm.language)}
                               style={{ width: '100%', minHeight: '80px', padding: '10px', backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', marginBottom: '15px', resize: 'vertical' }}
                               disabled={isGeneratingAgent}
                             />
@@ -1754,7 +1754,7 @@ function App() {
                                 style={{ padding: '8px 16px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
                                 disabled={isGeneratingAgent}
                               >
-                                Cancelar
+                                {t('cancel', settingsForm.language)}
                               </button>
                               <button 
                                 type="button" 
@@ -1762,7 +1762,7 @@ function App() {
                                 style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: isGeneratingAgent ? 'not-allowed' : 'pointer' }}
                                 disabled={isGeneratingAgent || !agentDescription.trim()}
                               >
-                                {isGeneratingAgent ? 'Generando Prompt...' : 'Generar Agente'}
+                                {isGeneratingAgent ? t('btnGeneratingPrompt', settingsForm.language) : t('btnGenerateAgent', settingsForm.language)}
                               </button>
                             </div>
                           </div>
@@ -1774,7 +1774,7 @@ function App() {
                           onClick={() => setEditingAgentId(null)}
                           style={{ alignSelf: 'flex-start', padding: '6px 12px', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}
                         >
-                          &larr; Volver a la lista
+                          &larr; {t('btnBackToList', settingsForm.language)}
                         </button>
                         
                         {(() => {
@@ -1785,7 +1785,7 @@ function App() {
                           return (
                             <div style={{ padding: '15px', backgroundColor: 'var(--bg-editor)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
                               <div style={{ marginBottom: '15px' }}>
-                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Nombre del Agente</label>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('agentName', settingsForm.language)}</label>
                                 <input 
                                   type="text" 
                                   value={agent.name} 
@@ -1799,7 +1799,7 @@ function App() {
                               </div>
 
                                 <div>
-                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>System Prompt</label>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('systemPrompt', settingsForm.language)}</label>
                                   <textarea 
                                     value={agent.systemPrompt} 
                                     onChange={e => {
@@ -1815,7 +1815,7 @@ function App() {
                                     onClick={() => setEditingAgentId(null)}
                                     style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                                   >
-                                    Guardar y Volver a la Lista
+                                    {t('btnSaveAndBack', settingsForm.language)}
                                   </button>
                                 </div>
                             </div>

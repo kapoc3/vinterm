@@ -120,7 +120,35 @@ export const translations = {
     confirmDeleteFolder: 'Are you sure you want to delete this folder and ALL its contents?',
     promptRenameFolder: 'Rename folder to:',
     confirmDeleteSession: 'Are you sure you want to delete this session?',
-    confirmDeleteFile: 'Are you sure you want to delete this file/folder?'
+    confirmDeleteFile: 'Are you sure you want to delete this file/folder?',
+    
+    // AI Agents & Profiles
+    aiAgentsTab: 'AI Agents',
+    btnEdit: 'Edit',
+    btnDelete: 'Delete',
+    btnAddAgent: '+ Add Agent',
+    reqAiProfile: '(Requires AI Profile)',
+    reqAiProfileTitle: 'You must configure an AI Profile first',
+    createNewAgentTitle: 'Create new Agent',
+    btnBackToList: '← Back to list',
+    agentName: 'Agent Name',
+    systemPrompt: 'System Prompt',
+    btnSaveAndBack: 'Save and Back to List',
+    magicGenTitle: 'Automatic Agent Generator',
+    magicGenDesc: 'Describe the role, personality, or task you need. Our Meta-Agent will connect using your active profile and create the ideal System Prompt.',
+    magicGenPlaceholder: 'Ex: I need a Docker expert who always responds with direct and safe commands for production environments...',
+    btnGenerateAgent: 'Generate Agent',
+    btnGeneratingPrompt: 'Generating Prompt...',
+    confirmDeleteAgent: 'Are you sure you want to delete this agent?',
+    alertNoAiProfiles: 'No AI profiles configured.',
+    alertInvalidPrompt: 'The AI did not return a valid prompt.',
+    alertAiConnectionError: 'Error connecting to AI: ',
+    alertGenerationError: 'Generation error: ',
+    labelAgent: 'Agent:',
+    defaultAgentPrompt: 'You are a helpful and direct assistant.',
+    confirmDeleteProfile: 'Are you sure you want to delete this profile?',
+    defaultNewProfile: 'New Profile',
+    labelProfile: 'Profile:'
   },
   es: {
     // Vault
@@ -244,7 +272,35 @@ export const translations = {
     confirmDeleteFolder: '¿Estás seguro de eliminar esta carpeta y TODO su contenido?',
     promptRenameFolder: 'Renombrar carpeta a:',
     confirmDeleteSession: '¿Estás seguro que deseas eliminar esta sesión?',
-    confirmDeleteFile: '¿Estás seguro que deseas eliminar este archivo/carpeta?'
+    confirmDeleteFile: '¿Estás seguro que deseas eliminar este archivo/carpeta?',
+    
+    // AI Agents & Profiles
+    aiAgentsTab: 'Agentes de IA',
+    btnEdit: 'Editar',
+    btnDelete: 'Eliminar',
+    btnAddAgent: '+ Añadir Agente',
+    reqAiProfile: '(Requiere Perfil IA)',
+    reqAiProfileTitle: 'Debes configurar un Perfil de IA primero',
+    createNewAgentTitle: 'Crear nuevo Agente',
+    btnBackToList: '← Volver a la lista',
+    agentName: 'Nombre del Agente',
+    systemPrompt: 'System Prompt',
+    btnSaveAndBack: 'Guardar y Volver a la Lista',
+    magicGenTitle: 'Generador Automático de Agentes',
+    magicGenDesc: 'Describe el rol, personalidad o tarea que necesitas. Nuestro Meta-Agente se conectará usando tu perfil activo y creará el System Prompt ideal.',
+    magicGenPlaceholder: 'Ej: Necesito un experto en Docker que me responda siempre con comandos directos y seguros para entornos de producción...',
+    btnGenerateAgent: 'Generar Agente',
+    btnGeneratingPrompt: 'Generando Prompt...',
+    confirmDeleteAgent: '¿Seguro que quieres eliminar este agente?',
+    alertNoAiProfiles: 'No hay perfiles de IA configurados.',
+    alertInvalidPrompt: 'La IA no devolvió un prompt válido.',
+    alertAiConnectionError: 'Error al conectar con la IA: ',
+    alertGenerationError: 'Error en la generación: ',
+    labelAgent: 'Agente:',
+    defaultAgentPrompt: 'Eres un asistente útil y directo.',
+    confirmDeleteProfile: '¿Seguro que quieres eliminar este perfil?',
+    defaultNewProfile: 'Nuevo Perfil',
+    labelProfile: 'Perfil:'
   }
 };
 
