@@ -131,11 +131,51 @@ ipcMain.on('terminal.spawnLocal', (event, id) => {
     ptyProcess.onData((data) => {
       mainWindow?.webContents.send(`terminal.incData.${id}`, data)
     })
+    ptyProcess.onExit((e) => {
+      mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+    })
 
     sessions.set(id, { type: 'local', instance: ptyProcess })
   } catch (err: any) {
     console.error("Local PTY Spawn Error:", err);
     mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31mFailed to spawn local terminal:\x1b[0m ${err.message}\r\n`)
+  }
+})
+
+ipcMain.on('terminal.spawnGCP', (event, id, config) => {
+  console.log(`[IPC] terminal.spawnGCP received for id: ${id}`);
+  try {
+    const { gcpProject, gcpZone, gcpInstance } = config;
+    const command = `gcloud compute ssh ${gcpInstance} --project=${gcpProject} --zone=${gcpZone}`;
+    
+    // Send initial status message
+    mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[36mConnecting to GCP instance [${gcpInstance}] via gcloud...\x1b[0m\r\n`);
+    
+    // Ensure common paths are included for macOS GUI apps
+    const extendedPath = process.platform !== 'win32' 
+      ? `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/google-cloud-sdk/bin`
+      : process.env.PATH;
+      
+    const args = process.platform === 'win32' ? ['/c', command] : ['-l', '-c', command];
+    const ptyProcess = pty.spawn(process.platform === 'win32' ? 'cmd.exe' : (process.env.SHELL || 'bash'), args, {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd: process.env.HOME || process.env.USERPROFILE || process.cwd(),
+      env: { ...process.env, PATH: extendedPath } as Record<string, string>
+    })
+
+    ptyProcess.onData((data) => {
+      mainWindow?.webContents.send(`terminal.incData.${id}`, data)
+    })
+    ptyProcess.onExit((e) => {
+      mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+    })
+
+    sessions.set(id, { type: 'gcp', instance: ptyProcess, config })
+  } catch (err: any) {
+    console.error("GCP PTY Spawn Error:", err);
+    mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31mFailed to spawn GCP SSH via gcloud:\x1b[0m ${err.message}\r\n`)
   }
 })
 
@@ -195,6 +235,31 @@ ipcMain.on('terminal.spawnSSH', (event, id, config) => {
 })
 
 ipcMain.handle('terminal.testSSH', async (event, config) => {
+  if (config.type === 'gcp') {
+    return new Promise((resolve) => {
+      const { gcpProject, gcpZone, gcpInstance } = config;
+      const command = `gcloud compute ssh ${gcpInstance} --project=${gcpProject} --zone=${gcpZone} --command="echo Success"`;
+      
+      const extendedPath = process.platform !== 'win32' 
+        ? `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/google-cloud-sdk/bin`
+        : process.env.PATH;
+
+      exec(command, { 
+        timeout: 30000,
+        env: { ...process.env, PATH: extendedPath },
+        shell: process.platform === 'win32' ? 'cmd.exe' : (process.env.SHELL || '/bin/bash')
+      }, (error, stdout, stderr) => {
+        if (error) {
+          resolve({ success: false, message: `GCP Test Error: ${stderr || error.message}` });
+        } else if (stdout.includes('Success')) {
+          resolve({ success: true, message: 'Connection successful!' });
+        } else {
+          resolve({ success: false, message: `GCP Test failed. Output: ${stdout}` });
+        }
+      });
+    });
+  }
+
   return new Promise((resolve) => {
     const conn = new SSHClient();
     const connectConfig: any = {
@@ -240,10 +305,14 @@ ipcMain.on('terminal.toTerm', (event, id, data) => {
   const session = sessions.get(id)
   if (!session) return
 
-  if (session.type === 'local') {
-    session.instance.write(data)
+  if (session.type === 'local' || session.type === 'gcp') {
+    try {
+      session.instance.write(data)
+    } catch (e) {}
   } else if (session.type === 'ssh') {
-    session.instance.write(data)
+    try {
+      session.instance.write(data)
+    } catch (e) {}
   }
 })
 
@@ -251,8 +320,10 @@ ipcMain.on('terminal.resize', (event, id, cols, rows) => {
   const session = sessions.get(id)
   if (!session) return
 
-  if (session.type === 'local') {
-    session.instance.resize(cols, rows)
+  if (session.type === 'local' || session.type === 'gcp') {
+    try {
+      session.instance.resize(cols, rows)
+    } catch (e) {}
   } else if (session.type === 'ssh') {
     // some SSH streams support resize via setWindow
     if (session.instance.setWindow) {
@@ -265,7 +336,7 @@ ipcMain.on('terminal.close', (event, id) => {
   const session = sessions.get(id)
   if (!session) return
 
-  if (session.type === 'local') {
+  if (session.type === 'local' || session.type === 'gcp') {
     session.instance.kill()
   } else if (session.type === 'ssh') {
     if (session.instance.end) session.instance.end()
@@ -543,48 +614,76 @@ ipcMain.handle('sftp.rename', async (event, id, oldPath, newPath) => {
 ipcMain.handle('ssh.getStats', async (event, id) => {
   return new Promise((resolve) => {
     const session = sessions.get(id);
-    if (!session || session.type !== 'ssh' || !session.client) {
+    if (!session || (session.type !== 'ssh' && session.type !== 'gcp')) {
       return resolve({ success: false });
     }
 
     const cmd = `echo "$(free -m | awk 'NR==2{print $2","$3}')---$(ps -eo pcpu | awk 'BEGIN {sum=0.0} {sum+=$1} END {print sum}')---$(nproc 2>/dev/null || echo 1)---$(df -m / | awk 'NR==2{print $2","$3}')"`;
     
+    const handleOutput = (data: string) => {
+      try {
+        const parts = data.trim().split('---');
+        if (parts.length >= 3) {
+          const memParts = parts[0].split(',');
+          const memTotal = parseInt(memParts[0], 10);
+          const memUsed = parseInt(memParts[1], 10);
+          
+          const rawCpu = parseFloat(parts[1]);
+          const cores = parseInt(parts[2], 10) || 1;
+          const cpuPercent = Math.min(100, Math.max(0, rawCpu / cores));
+          
+          let diskTotal = 0;
+          let diskUsed = 0;
+          if (parts.length >= 4) {
+             const diskParts = parts[3].split(',');
+             diskTotal = parseInt(diskParts[0], 10);
+             diskUsed = parseInt(diskParts[1], 10);
+          }
+
+          resolve({
+            success: true,
+            data: { cpu: cpuPercent, memTotal, memUsed, diskTotal, diskUsed }
+          });
+        } else {
+          resolve({ success: false });
+        }
+      } catch (e) {
+        resolve({ success: false });
+      }
+    };
+
+    if (session.type === 'gcp') {
+      if (!session.config) return resolve({ success: false });
+      const { gcpProject, gcpZone, gcpInstance } = session.config;
+      
+      // Escape single quotes for bash so we can wrap the whole command in single quotes
+      const escapedCmd = cmd.replace(/'/g, "'\\''");
+      const command = `gcloud compute ssh ${gcpInstance} --project=${gcpProject} --zone=${gcpZone} --command='${escapedCmd}'`;
+      
+      const extendedPath = process.platform !== 'win32' 
+        ? `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/google-cloud-sdk/bin`
+        : process.env.PATH;
+      exec(command, { 
+        timeout: 20000,
+        env: { ...process.env, PATH: extendedPath },
+        shell: process.platform === 'win32' ? 'cmd.exe' : (process.env.SHELL || '/bin/bash')
+      }, (error, stdout, stderr) => {
+        if (error) {
+          console.error("GCP Stats Error:", error, stderr);
+          return resolve({ success: false });
+        }
+        handleOutput(stdout);
+      });
+      return;
+    }
+
+    if (!session.client) return resolve({ success: false });
     session.client.exec(cmd, (err, stream) => {
       if (err) return resolve({ success: false });
       
       let data = '';
       stream.on('data', (chunk: any) => { data += chunk.toString(); });
-      stream.on('close', () => {
-        try {
-          const parts = data.trim().split('---');
-          if (parts.length >= 3) {
-            const memParts = parts[0].split(',');
-            const memTotal = parseInt(memParts[0], 10);
-            const memUsed = parseInt(memParts[1], 10);
-            
-            const rawCpu = parseFloat(parts[1]);
-            const cores = parseInt(parts[2], 10) || 1;
-            const cpuPercent = Math.min(100, Math.max(0, rawCpu / cores));
-            
-            let diskTotal = 0;
-            let diskUsed = 0;
-            if (parts.length >= 4) {
-               const diskParts = parts[3].split(',');
-               diskTotal = parseInt(diskParts[0], 10);
-               diskUsed = parseInt(diskParts[1], 10);
-            }
-
-            resolve({
-              success: true,
-              data: { cpu: cpuPercent, memTotal, memUsed, diskTotal, diskUsed }
-            });
-          } else {
-            resolve({ success: false });
-          }
-        } catch (e) {
-          resolve({ success: false });
-        }
-      });
+      stream.on('close', () => handleOutput(data));
     });
   });
 });

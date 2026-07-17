@@ -1,5 +1,6 @@
 # Architecture Overview
 
+🌍 [English](ARCHITECTURE.md) | [Español](ARCHITECTURE.es.md)
 VinTerm is built on a modern web stack to provide a fast, secure, and beautiful SSH client experience across all desktop platforms.
 
 ## Core Technologies

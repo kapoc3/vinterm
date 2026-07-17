@@ -1,5 +1,6 @@
 # VinTerm 🚀
 
+🌍 [English](README.md) | [Español](README.es.md)
 ![VinTerm](https://img.shields.io/badge/Status-Beta-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Community](https://img.shields.io/badge/Community-Open_Source-orange.svg)
@@ -11,12 +12,17 @@
 
 ## 🌟 Features
 
-- **Integrated SSH & SFTP:** Manage terminal sessions and transfer files side-by-side.
-- **Security Vault:** Enterprise-grade `aes-256-gcm` encryption. Your passwords and private keys are never stored in plain text.
-- **Real-Time Telemetry:** Monitor CPU, RAM, and Disk Usage directly from the status bar.
-- **Beautiful UI:** Fully customizable Light & Dark skins built with modern web technologies.
-- **Multi-Language (i18n):** Native support for English and Spanish, easily extensible by the community.
-- **Cross-Platform:** Available for macOS, Windows, and Linux.
+*See all features in detail on our website: [https://kapoc3.github.io/vinterm/#features](https://kapoc3.github.io/vinterm/#features)*
+
+- **🤖 Vincent AI Assistant:** The only terminal that lets you connect your favorite AI models.
+- **🧠 Custom AI Agents & Isolation:** Generate agents using natural language. We isolate security from the AI context.
+- **🔒 Security Vault:** Your passwords and private keys are never stored in plain text. Military-grade AES-256-GCM encryption.
+- **📊 Server Telemetry:** Real-time CPU, Memory, and Disk usage polling integrated into the terminal status bar.
+- **📂 Integrated SFTP:** Manage files seamlessly alongside your terminal sessions.
+- **🎨 Premium Themes:** Beautiful UI built with CSS variables. Switch between elegant Light and Dark modes.
+- **☁️ Google Cloud Platform:** Native integration with Google Cloud for your compute engine instances.
+- **🛡️ Zero Trust Architecture:** Built from the ground up for maximum security with strict CSP policies.
+- **💛 Community Driven:** Completely open source and community funded.
 
 ## 🤝 Community & Contributions
 

@@ -1,5 +1,6 @@
 # Installation Guide
 
+🌍 [English](INSTALL.md) | [Español](INSTALL.es.md)
 Welcome to the VinTerm community! Follow the instructions below to get the application running on your operating system.
 
 ---

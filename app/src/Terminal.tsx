@@ -14,6 +14,7 @@ declare global {
     electronAPI: {
       spawnLocal: (id: string) => void;
       spawnSSH: (id: string, config: any) => void;
+      spawnGCP: (id: string, config: any) => void;
       onTerminalData: (id: string, callback: (data: string) => void) => void;
       sendToTerminal: (id: string, data: string) => void;
       resizeTerminal: (id: string, cols: number, rows: number) => void;
@@ -1277,7 +1278,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
   const [stats, setStats] = useState<{ cpu: number, memTotal: number, memUsed: number, diskTotal: number, diskUsed: number } | null>(null);
 
   useEffect(() => {
-    if (!isActive || type !== 'ssh') return;
+    if (!isActive || (type !== 'ssh' && type !== 'gcp')) return;
     let mounted = true;
     const fetchStats = async () => {
       try {
@@ -1290,7 +1291,10 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
       }
     };
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    
+    // GCP polling uses a sub-process per fetch which is heavy, so we poll slower
+    const intervalTime = type === 'gcp' ? 15000 : 5000;
+    const interval = setInterval(fetchStats, intervalTime);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -1363,6 +1367,8 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
 
       if (type === 'local') {
         window.electronAPI.spawnLocal(id);
+      } else if (type === 'gcp') {
+        window.electronAPI.spawnGCP(id, config);
       } else {
         term.write(`\x1b[36mConnecting to ${config?.username}@${config?.host}...\x1b[0m\r\n`);
         window.electronAPI.spawnSSH(id, config);
@@ -1593,7 +1599,7 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
       </div>
 
       {/* Footer / Status Bar */}
-      {type === 'ssh' && (
+      {(type === 'ssh' || type === 'gcp') && (
         <div style={{
           height: '24px',
           backgroundColor: 'var(--accent)',

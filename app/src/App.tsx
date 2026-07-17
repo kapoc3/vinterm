@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { t } from './i18n'
 import { TerminalComponent } from './Terminal'
+import { FaTerminal, FaCloud } from 'react-icons/fa'
 import './App.css'
 
 export interface AiProfile {
@@ -67,18 +68,22 @@ interface SavedSession {
   id: string;
   name: string;
   folderId: string | null;
+  type?: 'ssh' | 'gcp';
   config: {
-    host: string;
+    host?: string;
     port?: number;
-    username: string;
+    username?: string;
     password?: string;
     privateKeyPath?: string;
+    gcpProject?: string;
+    gcpZone?: string;
+    gcpInstance?: string;
   };
 }
 
 interface Tab {
   id: string;
-  type: 'local' | 'ssh';
+  type: 'local' | 'ssh' | 'gcp';
   title: string;
   config?: any;
 }
@@ -255,7 +260,7 @@ function App() {
   const [deleteVaultNameInput, setDeleteVaultNameInput] = useState('')
 
   const [folderForm, setFolderForm] = useState({ name: '', parentId: '' })
-  const [sshForm, setSshForm] = useState({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false })
+  const [sshForm, setSshForm] = useState({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false, type: 'ssh' as 'ssh' | 'gcp', gcpProject: '', gcpZone: '', gcpInstance: '' })
   const [settingsForm, setSettingsForm] = useState<TerminalSettings>(settings)
   const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'terminal' | 'ai' | 'agents' | 'security' | 'data'>('general')
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
@@ -317,26 +322,30 @@ function App() {
 
   const openSavedSession = (session: SavedSession) => {
     const id = `tab-${Date.now()}`
-    setTabs([...tabs, { id, type: 'ssh', title: `🔒 ${session.name}`, config: session.config }])
+    setTabs([...tabs, { id, type: session.type || 'ssh', title: `🔒 ${session.name}`, config: session.config }])
     setActiveTab(id)
   }
 
   const handleSshSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sshForm.usePrivateKey && !sshForm.password) {
+    if (sshForm.type === 'ssh' && !sshForm.usePrivateKey && !sshForm.password) {
       alert("Password is required if not using a private key.");
       return;
     }
     const newSession: SavedSession = {
       id: editingSessionId || `session-${Date.now()}`,
-      name: sshForm.name || sshForm.host,
+      name: sshForm.name || (sshForm.type === 'gcp' ? sshForm.gcpInstance : sshForm.host) || 'Session',
+      type: sshForm.type,
       folderId: sshForm.folderId || null,
       config: {
         host: sshForm.host,
         port: sshForm.port,
         username: sshForm.username,
         password: sshForm.usePrivateKey ? undefined : sshForm.password,
-        privateKeyPath: sshForm.usePrivateKey ? sshForm.privateKeyPath : undefined
+        privateKeyPath: sshForm.usePrivateKey ? sshForm.privateKeyPath : undefined,
+        gcpProject: sshForm.type === 'gcp' ? sshForm.gcpProject : undefined,
+        gcpZone: sshForm.type === 'gcp' ? sshForm.gcpZone : undefined,
+        gcpInstance: sshForm.type === 'gcp' ? sshForm.gcpInstance : undefined
       }
     }
     if (editingSessionId) {
@@ -346,7 +355,7 @@ function App() {
     }
     setShowSessionModal(false)
     setEditingSessionId(null);
-    setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false })
+    setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false, type: 'ssh', gcpProject: '', gcpZone: '', gcpInstance: '' })
   }
 
   const handleFolderSubmit = (e: React.FormEvent) => {
@@ -739,13 +748,17 @@ function App() {
     if (session) {
       setSshForm({
         name: session.name,
-        host: session.config.host,
+        host: session.config.host || '',
         port: session.config.port || 22,
-        username: session.config.username,
+        username: session.config.username || '',
         password: session.config.password || '',
         privateKeyPath: session.config.privateKeyPath || '',
         folderId: session.folderId || '',
-        usePrivateKey: !!session.config.privateKeyPath
+        usePrivateKey: !!session.config.privateKeyPath,
+        type: session.type || 'ssh',
+        gcpProject: session.config.gcpProject || '',
+        gcpZone: session.config.gcpZone || '',
+        gcpInstance: session.config.gcpInstance || ''
       });
       setEditingSessionId(session.id);
       setTestStatus('idle');
@@ -756,19 +769,28 @@ function App() {
   }
 
   const handleTestConnection = async () => {
-    if (!sshForm.host || !sshForm.username) {
+    if (sshForm.type === 'ssh' && (!sshForm.host || !sshForm.username)) {
       setTestStatus('error');
       setTestMessage(t('hostRequired', settings.language));
+      return;
+    }
+    if (sshForm.type === 'gcp' && (!sshForm.gcpProject || !sshForm.gcpZone || !sshForm.gcpInstance)) {
+      setTestStatus('error');
+      setTestMessage('Project, Zone, and Instance are required to test GCP connection.');
       return;
     }
     setTestStatus('testing');
     setTestMessage(t('testing', settings.language));
     const result = await window.electronAPI.testSSHConnection({
+      type: sshForm.type,
       host: sshForm.host,
       port: sshForm.port,
       username: sshForm.username,
       password: sshForm.usePrivateKey ? undefined : sshForm.password,
-      privateKeyPath: sshForm.usePrivateKey ? sshForm.privateKeyPath : undefined
+      privateKeyPath: sshForm.usePrivateKey ? sshForm.privateKeyPath : undefined,
+      gcpProject: sshForm.type === 'gcp' ? sshForm.gcpProject : undefined,
+      gcpZone: sshForm.type === 'gcp' ? sshForm.gcpZone : undefined,
+      gcpInstance: sshForm.type === 'gcp' ? sshForm.gcpInstance : undefined
     });
     setTestStatus(result.success ? 'success' : 'error');
     
@@ -1227,7 +1249,7 @@ function App() {
             <button 
               onClick={() => {
                 setEditingSessionId(null);
-                setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false });
+                setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: '', usePrivateKey: false, type: 'ssh', gcpProject: '', gcpZone: '', gcpInstance: '' });
                 setTestStatus('idle');
                 setTestMessage('');
                 setShowSessionModal(true);
@@ -1991,48 +2013,104 @@ function App() {
               
               <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '5px 0' }} />
 
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 3 }}>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Host / IP:</label>
-                  <input required type="text" placeholder="192.168.1.10" value={sshForm.host} onChange={e => setSshForm({...sshForm, host: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
+                <div 
+                  onClick={() => setSshForm({...sshForm, type: 'ssh'})} 
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px', 
+                    cursor: 'pointer', 
+                    borderBottom: sshForm.type === 'ssh' ? '2px solid var(--accent)' : '2px solid transparent',
+                    color: sshForm.type === 'ssh' ? 'var(--text-main)' : 'var(--text-dim)',
+                    fontWeight: sshForm.type === 'ssh' ? 'bold' : 'normal',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <FaTerminal size={14} />
+                  {t('standardSsh', settings.language)}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Port:</label>
-                  <input required type="number" value={sshForm.port} onChange={e => setSshForm({...sshForm, port: parseInt(e.target.value) || 22})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Username:</label>
-                  <input required type="text" value={sshForm.username} onChange={e => setSshForm({...sshForm, username: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                <div 
+                  onClick={() => setSshForm({...sshForm, type: 'gcp'})} 
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px', 
+                    cursor: 'pointer', 
+                    borderBottom: sshForm.type === 'gcp' ? '2px solid var(--accent)' : '2px solid transparent',
+                    color: sshForm.type === 'gcp' ? 'var(--text-main)' : 'var(--text-dim)',
+                    fontWeight: sshForm.type === 'gcp' ? 'bold' : 'normal',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <FaCloud size={14} />
+                  {t('googleCloud', settings.language)}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', marginBottom: '5px' }}>
-                <input type="checkbox" id="usePrivateKey" checked={sshForm.usePrivateKey} onChange={e => setSshForm({...sshForm, usePrivateKey: e.target.checked})} style={{ cursor: 'pointer' }} />
-                <label htmlFor="usePrivateKey" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>Use Private Key for Authentication</label>
-              </div>
+              {sshForm.type === 'ssh' ? (
+                <>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 3 }}>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('host', settings.language)}:</label>
+                      <input required type="text" placeholder="192.168.1.10" value={sshForm.host} onChange={e => setSshForm({...sshForm, host: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('port', settings.language)}:</label>
+                      <input required type="number" value={sshForm.port} onChange={e => setSshForm({...sshForm, port: parseInt(e.target.value) || 22})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('username', settings.language)}:</label>
+                      <input required type="text" value={sshForm.username} onChange={e => setSshForm({...sshForm, username: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                  </div>
 
-              {!sshForm.usePrivateKey ? (
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Password:</label>
-                  <input type="password" value={sshForm.password} onChange={e => setSshForm({...sshForm, password: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', marginBottom: '5px' }}>
+                    <input type="checkbox" id="usePrivateKey" checked={sshForm.usePrivateKey} onChange={e => setSshForm({...sshForm, usePrivateKey: e.target.checked})} style={{ cursor: 'pointer' }} />
+                    <label htmlFor="usePrivateKey" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>Use Private Key for Authentication</label>
+                  </div>
+
+                  {!sshForm.usePrivateKey ? (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('password', settings.language)}:</label>
+                      <input type="password" value={sshForm.password} onChange={e => setSshForm({...sshForm, password: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('privateKeyPath', settings.language)}:</label>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <input required type="text" placeholder="/Users/kapoc/.ssh/id_rsa" value={sshForm.privateKeyPath} onChange={e => setSshForm({...sshForm, privateKeyPath: e.target.value})} style={{ flex: 1, padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                          <button type="button" onClick={async () => {
+                            const path = await window.electronAPI.selectFile();
+                            if (path) setSshForm({...sshForm, privateKeyPath: path});
+                          }} style={{ padding: '8px 15px', backgroundColor: 'var(--border-light)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('browse', settings.language)}</button>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Passphrase (optional, if key is encrypted):</label>
+                        <input type="password" value={sshForm.password} onChange={e => setSshForm({...sshForm, password: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Private Key Path:</label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <input required type="text" placeholder="/Users/kapoc/.ssh/id_rsa" value={sshForm.privateKeyPath} onChange={e => setSshForm({...sshForm, privateKeyPath: e.target.value})} style={{ flex: 1, padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                      <button type="button" onClick={async () => {
-                        const path = await window.electronAPI.selectFile();
-                        if (path) setSshForm({...sshForm, privateKeyPath: path});
-                      }} style={{ padding: '8px 15px', backgroundColor: 'var(--border-light)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('browse', settings.language)}</button>
-                    </div>
+                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('gcpProject', settings.language)}:</label>
+                    <input required type="text" placeholder="my-project-123" value={sshForm.gcpProject} onChange={e => setSshForm({...sshForm, gcpProject: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>Passphrase (optional, if key is encrypted):</label>
-                    <input type="password" value={sshForm.password} onChange={e => setSshForm({...sshForm, password: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('gcpZone', settings.language)}:</label>
+                    <input required type="text" placeholder="us-central1-a" value={sshForm.gcpZone} onChange={e => setSshForm({...sshForm, gcpZone: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px' }}>{t('gcpInstance', settings.language)}:</label>
+                    <input required type="text" placeholder="instance-1" value={sshForm.gcpInstance} onChange={e => setSshForm({...sshForm, gcpInstance: e.target.value})} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-main)', borderRadius: '4px' }} />
                   </div>
                 </div>
               )}
@@ -2045,9 +2123,11 @@ function App() {
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                <button type="button" onClick={handleTestConnection} disabled={testStatus === 'testing'} style={{ padding: '8px 15px', backgroundColor: 'var(--border-light)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer' }}>
-                  {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
-                </button>
+                <div>
+                  <button type="button" onClick={handleTestConnection} disabled={testStatus === 'testing'} style={{ padding: '8px 15px', backgroundColor: 'var(--border-light)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer' }}>
+                    {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button type="button" onClick={() => setShowSessionModal(false)} style={{ padding: '8px 15px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{t('cancel', settings.language)}</button>
                   <button type="submit" style={{ padding: '8px 15px', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{editingSessionId ? 'Update' : 'Save'} Session</button>
@@ -2170,7 +2250,7 @@ function App() {
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => {
                   setEditingSessionId(null);
-                  setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: contextMenu.targetId, usePrivateKey: false });
+                  setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: contextMenu.targetId, usePrivateKey: false, type: 'ssh', gcpProject: '', gcpZone: '', gcpInstance: '' });
                   setTestStatus('idle');
                   setTestMessage('');
                   setShowSessionModal(true);

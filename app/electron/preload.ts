@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   spawnLocal: (id: string) => ipcRenderer.send('terminal.spawnLocal', id),
   spawnSSH: (id: string, config: any) => ipcRenderer.send('terminal.spawnSSH', id, config),
+  spawnGCP: (id: string, config: any) => ipcRenderer.send('terminal.spawnGCP', id, config),
   onTerminalData: (id: string, callback: (data: string) => void) => {
     ipcRenderer.on(`terminal.incData.${id}`, (_event, data) => callback(data))
   },

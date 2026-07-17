@@ -20,6 +20,12 @@ const i18n = {
         featAiDesc: "You no longer have to worry about the AI knowing your credentials. We isolate security from the AI context, allowing commands to be generated and executed without sharing your secrets.",
         featVincentTitle: "Vincent AI Assistant",
         featVincentDesc: "The only terminal that lets you connect your favorite AI models. Optimize your server management by interacting with our built-in intelligent assistant, Vincent.",
+        featZeroTrustTitle: "Zero Trust Architecture",
+        featZeroTrustDesc: "Built from the ground up for maximum security. Features auto-lock mechanics, strict CSP policies, and complete encryption of both connections and folder structures.",
+        featCommunityTitle: "Community Driven",
+        featCommunityDesc: "VinTerm is completely open source and community funded. Support the ongoing development through Ko-Fi and participate in the roadmap on GitHub.",
+        featGcpTitle: "Google Cloud Platform",
+        featGcpDesc: "Native integration with Google Cloud. Connect to your compute engine instances with automatic authentication and telemetry polling.",
         footerVicente: "Proudly named in honor of Vicente.",
         footerCopyright: "&copy; 2026 Kappsco. Open Source under MIT License.",
         downloadDefault: "Download VinTerm",
@@ -49,6 +55,12 @@ const i18n = {
         featAiDesc: "Ya no tienes que preocuparte de que la IA conozca tus credenciales. Aislamos la seguridad del contexto de IA, permitiendo que se generen y se ejecuten comandos sin necesidad de compartir secretos.",
         featVincentTitle: "Asistente IA Vincent",
         featVincentDesc: "La única consola que te permite asociar tus modelos de IA favoritos. Optimiza la administración de tus servidores interactuando con nuestro asistente inteligente integrado, Vincent.",
+        featZeroTrustTitle: "Arquitectura Zero Trust",
+        featZeroTrustDesc: "Construida desde cero para máxima seguridad. Cuenta con mecanismos de autobloqueo, políticas CSP estrictas y cifrado completo tanto de conexiones como de estructuras de carpetas.",
+        featCommunityTitle: "Impulsada por la Comunidad",
+        featCommunityDesc: "VinTerm es completamente de código abierto y financiado por la comunidad. Apoya el desarrollo continuo a través de Ko-Fi y participa en la hoja de ruta en GitHub.",
+        featGcpTitle: "Google Cloud Platform",
+        featGcpDesc: "Integración nativa con Google Cloud. Conéctate a tus instancias de Compute Engine con autenticación automática y monitoreo de telemetría.",
         footerVicente: "Orgullosamente nombrado en honor a Vicente.",
         footerCopyright: "&copy; 2026 Kappsco. Código abierto bajo licencia MIT.",
         downloadDefault: "Descargar VinTerm",
@@ -77,6 +89,13 @@ function applyTranslations(lang) {
 function updateDynamicText() {
     const downloadBtn = document.getElementById('download-btn');
     const osHint = document.getElementById('os-hint');
+    const docsLink = document.getElementById('docs-link');
+    
+    if (docsLink) {
+        docsLink.href = currentLang === 'es' 
+            ? 'https://github.com/kapoc3/vinterm/blob/main/docs/ARCHITECTURE.es.md' 
+            : 'https://github.com/kapoc3/vinterm/blob/main/docs/ARCHITECTURE.md';
+    }
     
     if (osName !== "Unknown OS") {
         downloadBtn.textContent = i18n[currentLang].btnDownload + osName;
