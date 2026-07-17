@@ -195,7 +195,7 @@ function App() {
   }, [folders, vaultStatus, masterPassword, currentVaultId])
 
   // Auto-lock feature
-  const autoLockTimer = useRef<NodeJS.Timeout | null>(null);
+  const autoLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetAutoLock = useCallback(() => {
     if (autoLockTimer.current) clearTimeout(autoLockTimer.current);
@@ -645,7 +645,7 @@ function App() {
         try {
           const parsed = JSON.parse(res.data);
           if (parsed.format === 'vinterm') {
-            const { sessions, folders, settings: importedSettings } = parsed.data;
+            const { sessions, folders } = parsed.data;
             if (sessions) {
               const importedSessions = JSON.parse(sessions);
               setSavedSessions(prev => {
@@ -940,7 +940,8 @@ function App() {
           <select 
             value={settings.language} 
             onChange={(e) => {
-              const newSettings = { ...settings, language: e.target.value };
+              const language = e.target.value as NonNullable<TerminalSettings['language']>;
+              const newSettings: TerminalSettings = { ...settings, language };
               setSettings(newSettings);
               localStorage.setItem('kx_settings', JSON.stringify(newSettings));
             }}
@@ -1079,7 +1080,7 @@ function App() {
                 setVaultError(t('vaultError', settings.language));
                 return;
               }
-              let sessionsToSave = [];
+              const sessionsToSave: SavedSession[] = [];
               const newId = `vault_${Date.now()}`;
               
               const res = await window.electronAPI.vaultEncrypt(JSON.stringify(sessionsToSave), pass);
