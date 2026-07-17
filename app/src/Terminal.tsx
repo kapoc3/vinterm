@@ -77,7 +77,7 @@ export interface TerminalSettings {
 
 interface TerminalProps {
   id: string;
-  type: 'local' | 'ssh';
+  type: 'local' | 'ssh' | 'gcp';
   config?: any;
   isActive: boolean;
   settings?: TerminalSettings;
