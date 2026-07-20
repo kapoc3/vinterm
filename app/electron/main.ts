@@ -46,6 +46,20 @@ function createWindow() {
     console.error('PRELOAD ERROR in path:', preloadPath);
     console.error(error);
   });
+
+  mainWindow.on('closed', () => {
+    // Clear sessions to avoid background processes running after window close
+    for (const [id, session] of sessions.entries()) {
+      if (session.type === 'local' || session.type === 'gcp') {
+        try { session.instance.kill(); } catch (e) {}
+      } else if (session.type === 'ssh') {
+        try { if (session.instance.end) session.instance.end(); } catch (e) {}
+        try { if (session.client.end) session.client.end(); } catch (e) {}
+      }
+    }
+    sessions.clear();
+    mainWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
