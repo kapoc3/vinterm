@@ -3,6 +3,25 @@ import { exec } from 'child_process'
 import * as path from 'path'
 import * as pty from 'node-pty'
 
+// Ignore EPIPE errors on stdout/stderr (happens when writing to console.log in built macOS app)
+if (process.stdout) {
+  process.stdout.on('error', (err: any) => {
+    if (err.code === 'EPIPE') return;
+  });
+}
+if (process.stderr) {
+  process.stderr.on('error', (err: any) => {
+    if (err.code === 'EPIPE') return;
+  });
+}
+
+process.on('uncaughtException', (err: any) => {
+  if (err.code === 'EPIPE') {
+    return; // Ignore EPIPE globally
+  }
+  console.error('Uncaught Exception:', err);
+});
+
 console.log('--- MAIN PROCESS STARTED ---');
 console.log('PTY object:', Object.keys(pty));
 console.log('PTY spawn type:', typeof pty.spawn);

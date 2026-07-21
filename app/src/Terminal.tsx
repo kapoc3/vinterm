@@ -859,6 +859,12 @@ const AiDrawer = ({ id, isActive, onClose, settings, getTerminalContext }: { id:
   }, [isActive, provider, baseUrl, apiKey]);
 
   useEffect(() => {
+    if (availableModels.length > 0 && !availableModels.includes(selectedModel)) {
+      setSelectedModel(availableModels[0]);
+    }
+  }, [availableModels, selectedModel]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
