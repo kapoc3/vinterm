@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { t } from './i18n'
 import { TerminalComponent } from './Terminal'
+import { DashboardManager } from './DashboardManager'
+import { Dashboard } from './Dashboard'
 import { FaTerminal, FaCloud } from 'react-icons/fa'
 import './App.css'
 
@@ -32,6 +34,23 @@ export const FIXED_AGENTS: AiAgent[] = [
   }
 ];
 
+export interface DashboardWidget {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  sessionId: string;
+  color?: string;
+}
+
+export interface DashboardConfig {
+  id: string;
+  name: string;
+  widgets: DashboardWidget[];
+  vaultId?: string;
+}
+
 interface TerminalSettings {
   fontFamily: string;
   fontSize: number;
@@ -43,6 +62,7 @@ interface TerminalSettings {
   activeAiProfileId?: string;
   aiAgents?: AiAgent[];
   activeAiAgentId?: string;
+  dashboards?: DashboardConfig[];
   
   // Legacy fields (kept for migration only)
   aiBaseUrl?: string;
@@ -64,7 +84,7 @@ interface VaultInfo {
   hint: string;
 }
 
-interface SavedSession {
+export interface SavedSession {
   id: string;
   name: string;
   folderId: string | null;
@@ -83,7 +103,7 @@ interface SavedSession {
 
 interface Tab {
   id: string;
-  type: 'local' | 'ssh' | 'gcp';
+  type: 'local' | 'ssh' | 'gcp' | 'dashboard' | 'dashboard-view';
   title: string;
   config?: any;
 }
@@ -107,7 +127,8 @@ const defaultSettings: TerminalSettings = {
   ],
   activeAiProfileId: 'default_ai',
   aiAgents: [],
-  activeAiAgentId: 'agent_devops'
+  activeAiAgentId: 'agent_devops',
+  dashboards: []
 }
 
 function App() {
@@ -313,6 +334,51 @@ function App() {
       setAvailableFonts(fonts.map(f => f.replace(/"/g, '')));
     }
   }
+
+  const openDashboardManager = () => {
+    const id = 'dashboard-manager';
+    setTabs(prev => {
+      if (!prev.find(t => t.id === id)) {
+        return [...prev, { id, type: 'dashboard', title: '📊 ' + (settings.language === 'en' ? 'Monitoring' : 'Monitoreo') }];
+      }
+      return prev;
+    });
+    setActiveTab(id);
+  }
+
+  const handleSaveDashboard = async (db: DashboardConfig) => {
+    db.vaultId = currentVaultId || 'default';
+    const dbs = settings.dashboards || [];
+    const idx = dbs.findIndex(d => d.id === db.id);
+    let newDbs = [...dbs];
+    if (idx >= 0) {
+      newDbs[idx] = db;
+    } else {
+      newDbs.push(db);
+    }
+    const newSettings = { ...settings, dashboards: newDbs };
+    setSettings(newSettings);
+    localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+  };
+
+  const handleDeleteDashboard = async (id: string) => {
+    const dbs = settings.dashboards || [];
+    const newDbs = dbs.filter(d => d.id !== id);
+    const newSettings = { ...settings, dashboards: newDbs };
+    setSettings(newSettings);
+    localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+  };
+
+  const handleOpenDashboard = (db: DashboardConfig) => {
+    const id = `dashboard-view-${db.id}`;
+    setTabs(prev => {
+      if (!prev.find(t => t.id === id)) {
+        return [...prev, { id, type: 'dashboard-view' as any, title: `📊 ${db.name}`, config: db }];
+      }
+      return prev;
+    });
+    setActiveTab(id);
+  };
 
   const addLocal = () => {
     const id = `tab-${Date.now()}`
@@ -1312,6 +1378,22 @@ function App() {
           <span style={{ color: 'var(--text-muted)', fontWeight: '500', fontSize: '0.9rem' }}>{t('switchVault', settings.language) || 'Switch Vault'}</span>
         </div>
 
+        {/* Tools Menu */}
+        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border-color)' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+            {settings.language === 'en' ? 'Tools' : 'Herramientas'}
+          </div>
+          <div 
+            onClick={openDashboardManager}
+            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 10px', borderRadius: '4px', transition: 'background-color 0.2s', marginLeft: '-10px' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <span style={{ fontSize: '1.2rem', marginRight: '10px', color: '#4ade80' }}>📊</span>
+            <span style={{ color: 'var(--text-main)', fontSize: '0.9rem' }}>{settings.language === 'en' ? 'Monitoring' : 'Monitoreo'}</span>
+          </div>
+        </div>
+
         {/* Bottom Settings Button */}
         <div 
           onClick={openSettings}
@@ -1356,16 +1438,35 @@ function App() {
         </div>
 
         {/* Terminal View */}
-        <div style={{ flex: 1, position: 'relative', padding: '10px', backgroundColor: settings.background }}>
+        <div style={{ flex: 1, position: 'relative', padding: '10px', backgroundColor: settings.background, display: 'flex', flexDirection: 'column' }}>
           {tabs.map(tab => (
-            <TerminalComponent 
-              key={tab.id} 
-              id={tab.id} 
-              type={tab.type} 
-              config={tab.config} 
-              isActive={activeTab === tab.id}
-              settings={settings}
-            />
+            <div key={tab.id} style={{ display: activeTab === tab.id ? 'flex' : 'none', flex: 1, width: '100%', overflow: 'hidden' }}>
+              {tab.type === 'dashboard' ? (
+                <DashboardManager 
+                  dashboards={(settings.dashboards || []).filter(d => !d.vaultId || d.vaultId === currentVaultId)} 
+                  sessions={savedSessions} 
+                  settings={settings}
+                  onSaveDashboard={handleSaveDashboard} 
+                  onDeleteDashboard={handleDeleteDashboard} 
+                  onOpenDashboard={handleOpenDashboard} 
+                />
+              ) : tab.type === 'dashboard-view' ? (
+                <Dashboard 
+                  config={settings.dashboards?.find(d => d.id === (tab.dashboardId || tab.config?.id)) || tab.config} 
+                  sessions={savedSessions} 
+                  settings={settings} 
+                  onSaveDashboard={handleSaveDashboard} 
+                />
+              ) : (
+                <TerminalComponent 
+                  id={tab.id} 
+                  type={tab.type as any} 
+                  config={tab.config} 
+                  isActive={activeTab === tab.id}
+                  settings={settings}
+                />
+              )}
+            </div>
           ))}
           {tabs.length === 0 && (
             <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#666', flexDirection: 'column' }}>

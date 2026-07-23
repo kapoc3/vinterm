@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Stats
   getSshStats: (id: string) => ipcRenderer.invoke('ssh.getStats', id),
   
+  // Dashboard
+  dashboardConnect: (id: string, config: any, type: string) => ipcRenderer.invoke('dashboard.connect', id, config, type),
+  dashboardDisconnect: (id: string) => ipcRenderer.invoke('dashboard.disconnect', id),
+  
   // System/Dialogs
   openExternal: (url: string) => ipcRenderer.invoke('system.openExternal', url),
   getFonts: () => ipcRenderer.invoke('system.getFonts'),

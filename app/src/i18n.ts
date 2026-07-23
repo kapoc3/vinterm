@@ -157,7 +157,36 @@ export const translations = {
     defaultAgentPrompt: 'You are a helpful and direct assistant.',
     confirmDeleteProfile: 'Are you sure you want to delete this profile?',
     defaultNewProfile: 'New Profile',
-    labelProfile: 'Profile:'
+    labelProfile: 'Profile:',
+    
+    // Dashboard
+    dashboardLoading: 'Loading dashboard...',
+    dashboardRefresh: 'Refresh stats',
+    dashboardCpu: 'CPU',
+    dashboardRam: 'RAM',
+    dashboardDisk: 'Disk',
+    dashboardUnknown: 'Unknown',
+    
+    // Dashboard Manager
+    dmTitle: 'Server Monitoring',
+    dmNewDashboard: 'New Dashboard',
+    dmCreateDashboard: 'Create Dashboard',
+    dmEditDashboard: 'Edit Dashboard',
+    dmDashboardName: 'Dashboard Name',
+    dmNamePlaceholder: 'E.g: Production Servers',
+    dmSelectServers: 'Select Servers to Monitor',
+    dmNoSessions: 'You have no saved connections.',
+    dmSave: 'Save',
+    dmCancel: 'Cancel',
+    dmEdit: 'Edit',
+    dmDelete: 'Delete',
+    dmConfirmDelete: 'Delete this dashboard?',
+    dmServersConfigured: 'servers configured',
+    dmOpenDashboard: 'Open Dashboard',
+    dmNoDashboards: 'You have no dashboards configured.',
+    dmCreateFirst: 'Create the first one',
+    dmNewDashboardName: 'New Dashboard',
+    dmCannotUndo: 'This action cannot be undone.'
   },
   es: {
     // Vault
@@ -317,7 +346,36 @@ export const translations = {
     defaultAgentPrompt: 'Eres un asistente útil y directo.',
     confirmDeleteProfile: '¿Seguro que quieres eliminar este perfil?',
     defaultNewProfile: 'Nuevo Perfil',
-    labelProfile: 'Perfil:'
+    labelProfile: 'Perfil:',
+    
+    // Dashboard
+    dashboardLoading: 'Cargando dashboard...',
+    dashboardRefresh: 'Refrescar estadísticas',
+    dashboardCpu: 'CPU',
+    dashboardRam: 'RAM',
+    dashboardDisk: 'Disco',
+    dashboardUnknown: 'Desconocido',
+    
+    // Dashboard Manager
+    dmTitle: 'Monitoreo de Servidores',
+    dmNewDashboard: 'Nuevo Dashboard',
+    dmCreateDashboard: 'Crear Dashboard',
+    dmEditDashboard: 'Editar Dashboard',
+    dmDashboardName: 'Nombre del Dashboard',
+    dmNamePlaceholder: 'Ej: Servidores de Producción',
+    dmSelectServers: 'Seleccionar Servidores a Monitorear',
+    dmNoSessions: 'No tienes conexiones guardadas.',
+    dmSave: 'Guardar',
+    dmCancel: 'Cancelar',
+    dmEdit: 'Editar',
+    dmDelete: 'Eliminar',
+    dmConfirmDelete: '¿Eliminar este dashboard?',
+    dmServersConfigured: 'servidores configurados',
+    dmOpenDashboard: 'Abrir Dashboard',
+    dmNoDashboards: 'No tienes ningún dashboard configurado.',
+    dmCreateFirst: 'Crear el primero',
+    dmNewDashboardName: 'Nuevo Dashboard',
+    dmCannotUndo: 'Esta acción no se puede deshacer.'
   }
 };
 

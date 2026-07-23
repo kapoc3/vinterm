@@ -146,6 +146,7 @@ app.on('window-all-closed', () => {
 // Session Management
 // id -> { type: 'local'|'ssh', instance: any }
 const sessions = new Map<string, any>()
+const dashboardSessions = new Map<string, any>()
 
 const shell = process.env[process.platform === 'win32' ? 'COMSPEC' : 'SHELL'] || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
 
@@ -646,12 +647,13 @@ ipcMain.handle('sftp.rename', async (event, id, oldPath, newPath) => {
 
 ipcMain.handle('ssh.getStats', async (event, id) => {
   return new Promise((resolve) => {
-    const session = sessions.get(id);
+    let session = sessions.get(id);
+    if (!session) session = dashboardSessions.get(id);
     if (!session || (session.type !== 'ssh' && session.type !== 'gcp')) {
       return resolve({ success: false });
     }
 
-    const cmd = `echo "$(free -m | awk 'NR==2{print $2","$3}')---$(ps -eo pcpu | awk 'BEGIN {sum=0.0} {sum+=$1} END {print sum}')---$(nproc 2>/dev/null || echo 1)---$(df -m / | awk 'NR==2{print $2","$3}')"`;
+    const cmd = `echo "$(free -m | awk 'NR==2{print $2","$3}')---$(ps -eo pcpu | awk 'BEGIN {sum=0.0} {sum+=$1} END {print sum}')---$(nproc 2>/dev/null || echo 1)---$(df -m / | awk 'NR==2{print $2","$3}')---$(awk -F'\\"' '/^PRETTY_NAME=/{print $2}' /etc/os-release 2>/dev/null || uname -sr) $(uname -r)"`;
     
     const handleOutput = (data: string) => {
       try {
@@ -672,10 +674,15 @@ ipcMain.handle('ssh.getStats', async (event, id) => {
              diskTotal = parseInt(diskParts[0], 10);
              diskUsed = parseInt(diskParts[1], 10);
           }
+          
+          let osName = '';
+          if (parts.length >= 5) {
+             osName = parts[4].trim();
+          }
 
           resolve({
             success: true,
-            data: { cpu: cpuPercent, memTotal, memUsed, diskTotal, diskUsed }
+            data: { cpu: cpuPercent, memTotal, memUsed, diskTotal, diskUsed, osName }
           });
         } else {
           resolve({ success: false });
@@ -711,14 +718,78 @@ ipcMain.handle('ssh.getStats', async (event, id) => {
     }
 
     if (!session.client) return resolve({ success: false });
-    session.client.exec(cmd, (err, stream) => {
-      if (err) return resolve({ success: false });
-      
-      let data = '';
-      stream.on('data', (chunk: any) => { data += chunk.toString(); });
-      stream.on('close', () => handleOutput(data));
-    });
+    try {
+      session.client.exec(cmd, (err, stream) => {
+        if (err) return resolve({ success: false });
+        
+        let data = '';
+        stream.on('data', (chunk: any) => { data += chunk.toString(); });
+        stream.on('close', () => handleOutput(data));
+      });
+    } catch (e) {
+      console.error("ssh.getStats exec error:", e);
+      return resolve({ success: false });
+    }
   });
+});
+
+ipcMain.handle('dashboard.connect', async (event, id, config, type) => {
+  return new Promise((resolve) => {
+    if (dashboardSessions.has(id)) {
+      return resolve({ success: true });
+    }
+    if (type === 'gcp') {
+      dashboardSessions.set(id, { type: 'gcp', config });
+      return resolve({ success: true });
+    }
+    
+    const conn = new SSHClient();
+    conn.on('ready', () => {
+      dashboardSessions.set(id, { type: 'ssh', client: conn });
+      resolve({ success: true });
+    }).on('error', (err) => {
+      console.error("Dashboard SSH Error:", err);
+      resolve({ success: false, message: err.message });
+    });
+
+    const connectConfig: any = {
+      host: config.host,
+      port: config.port || 22,
+      username: config.username,
+      readyTimeout: 10000
+    };
+    if (config.privateKeyPath) {
+      try {
+        let keyPath = config.privateKeyPath;
+        if (keyPath.startsWith('~')) {
+          keyPath = path.join(os.homedir(), keyPath.slice(1));
+        }
+        connectConfig.privateKey = fs.readFileSync(keyPath);
+        if (config.password) {
+          connectConfig.passphrase = config.password;
+        }
+      } catch (e: any) {
+        return resolve({ success: false, message: e.message });
+      }
+    } else if (config.password) {
+      connectConfig.password = config.password;
+    }
+    
+    try {
+      conn.connect(connectConfig);
+    } catch (e: any) {
+      resolve({ success: false, message: e.message });
+    }
+  });
+});
+
+ipcMain.handle('dashboard.disconnect', async (event, id) => {
+  const session = dashboardSessions.get(id);
+  if (session && session.type === 'ssh' && session.client) {
+    session.client.end();
+  }
+  dashboardSessions.delete(id);
+  return { success: true };
 });
 
 const activeWatchers = new Map<string, fs.FSWatcher>();
