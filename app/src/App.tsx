@@ -3,36 +3,37 @@ import { t } from './i18n'
 import { TerminalComponent } from './Terminal'
 import { DashboardManager } from './DashboardManager'
 import { Dashboard } from './Dashboard'
-import { FaTerminal, FaCloud } from 'react-icons/fa'
+import { FaCloud, FaBrain, FaCoffee } from 'react-icons/fa'
+import { 
+  VscTerminal, 
+  VscServer, 
+  VscFolder, 
+  VscFolderOpened, 
+  VscChevronRight, 
+  VscChevronDown, 
+  VscAdd, 
+  VscSearch, 
+  VscEdit, 
+  VscTrash, 
+  VscPlay, 
+  VscGear, 
+  VscGraph, 
+  VscLock, 
+  VscClose 
+} from 'react-icons/vsc'
+import { type AppAction, type AiAgent, FIXED_AGENTS, cleanReasoningOutput } from './aiEngine'
+import { EngramModal } from './EngramModal'
+import { saveMemory } from './engram'
 import './App.css'
 
 export interface AiProfile {
   id: string;
   name: string;
-  provider: 'openai' | 'ollama' | 'deepseek' | 'custom';
+  provider: 'openai' | 'google' | 'opencode' | 'ollama' | 'deepseek' | 'custom';
   baseUrl: string;
   apiKey: string;
   model: string;
 }
-
-export interface AiAgent {
-  id: string;
-  name: string;
-  systemPrompt: string;
-}
-
-export const FIXED_AGENTS: AiAgent[] = [
-  {
-    id: 'agent_devops',
-    name: 'Vincent AI (DevOps)',
-    systemPrompt: 'Eres Vincent AI, un ingeniero DevOps y SysAdmin Senior de élite experto en servidores Linux, redes y entornos de consola. Tu objetivo es ayudar al usuario a administrar su sistema y resolver problemas con la máxima eficiencia y seguridad.'
-  },
-  {
-    id: 'agent_meta',
-    name: 'Creador de Agentes (Meta)',
-    systemPrompt: 'Eres un experto Creador de Agentes de IA. El usuario te dará una descripción en lenguaje natural de la personalidad, rol o tarea que necesita automatizar. Tu trabajo es responder ÚNICAMENTE con el "System Prompt" ideal, detallado y altamente efectivo que el usuario debe configurar para ese nuevo agente. No incluyas saludos ni explicaciones, solo devuelve el texto del System Prompt listo para copiar y pegar.'
-  }
-];
 
 export interface DashboardWidget {
   i: string;
@@ -63,12 +64,19 @@ interface TerminalSettings {
   aiAgents?: AiAgent[];
   activeAiAgentId?: string;
   dashboards?: DashboardConfig[];
+  gentleAi?: {
+    enableGentleman?: boolean;
+    enableEngram?: boolean;
+    enableContext7?: boolean;
+    enableGuardrails?: boolean;
+    context7ApiKey?: string;
+  };
   
   // Legacy fields (kept for migration only)
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
-  aiProvider?: 'openai' | 'ollama' | 'deepseek' | 'custom';
+  aiProvider?: 'openai' | 'google' | 'opencode' | 'ollama' | 'deepseek' | 'custom';
 }
 
 interface Folder {
@@ -106,6 +114,7 @@ interface Tab {
   type: 'local' | 'ssh' | 'gcp' | 'dashboard' | 'dashboard-view';
   title: string;
   config?: any;
+  dashboardId?: string;
 }
 
 const defaultSettings: TerminalSettings = {
@@ -128,7 +137,14 @@ const defaultSettings: TerminalSettings = {
   activeAiProfileId: 'default_ai',
   aiAgents: [],
   activeAiAgentId: 'agent_devops',
-  dashboards: []
+  dashboards: [],
+  gentleAi: {
+    enableGentleman: true,
+    enableEngram: true,
+    enableContext7: true,
+    enableGuardrails: true,
+    context7ApiKey: ''
+  }
 }
 
 function App() {
@@ -144,6 +160,7 @@ function App() {
 
   const [newVaultName, setNewVaultName] = useState('');
   const [newVaultHint, setNewVaultHint] = useState('');
+  const [showEngramModal, setShowEngramModal] = useState(false);
 
   useEffect(() => {
     const vaultsIndexStr = localStorage.getItem('kx_vaults_index');
@@ -178,6 +195,8 @@ function App() {
   // Persisted state
   const [folders, setFolders] = useState<Folder[]>([])
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([])
+  const [sessionSearch, setSessionSearch] = useState('')
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null)
   const [settings, setSettings] = useState<TerminalSettings>(() => {
     const saved = localStorage.getItem('kx_settings');
     let parsed: TerminalSettings = saved ? JSON.parse(saved) : defaultSettings;
@@ -339,7 +358,7 @@ function App() {
     const id = 'dashboard-manager';
     setTabs(prev => {
       if (!prev.find(t => t.id === id)) {
-        return [...prev, { id, type: 'dashboard', title: '📊 ' + (settings.language === 'en' ? 'Monitoring' : 'Monitoreo') }];
+        return [...prev, { id, type: 'dashboard', title: settings.language === 'en' ? 'Monitoring' : 'Monitoreo' }];
       }
       return prev;
     });
@@ -373,22 +392,80 @@ function App() {
     const id = `dashboard-view-${db.id}`;
     setTabs(prev => {
       if (!prev.find(t => t.id === id)) {
-        return [...prev, { id, type: 'dashboard-view' as any, title: `📊 ${db.name}`, config: db }];
+        return [...prev, { id, type: 'dashboard-view' as any, title: db.name, config: db }];
       }
       return prev;
     });
     setActiveTab(id);
   };
 
+  const handleApplyAction = (action: AppAction) => {
+    if (action.type === 'change_theme') {
+      const newTheme = action.payload?.theme;
+      if (newTheme && ['light', 'dark', 'vincent'].includes(newTheme)) {
+        const newSettings = { ...settings, theme: newTheme };
+        setSettings(newSettings);
+        setSettingsForm(prev => ({ ...prev, theme: newTheme }));
+        localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+        document.documentElement.setAttribute('data-theme', newTheme);
+      }
+    } else if (action.type === 'change_font_size') {
+      const fontSize = Number(action.payload?.fontSize);
+      if (fontSize >= 10 && fontSize <= 32) {
+        const newSettings = { ...settings, fontSize };
+        setSettings(newSettings);
+        setSettingsForm(prev => ({ ...prev, fontSize }));
+        localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+      }
+    } else if (action.type === 'change_language') {
+      const language = action.payload?.language;
+      if (language === 'es' || language === 'en') {
+        const newSettings = { ...settings, language };
+        setSettings(newSettings);
+        setSettingsForm(prev => ({ ...prev, language }));
+        localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+      }
+    } else if (action.type === 'create_agent') {
+      const { name, systemPrompt } = action.payload || {};
+      if (name && systemPrompt) {
+        const newAgent: AiAgent = {
+          id: `agent_${Date.now()}`,
+          name,
+          systemPrompt
+        };
+        const newAgents = [...(settings.aiAgents || []), newAgent];
+        const newSettings = {
+          ...settings,
+          aiAgents: newAgents,
+          activeAiAgentId: newAgent.id
+        };
+        setSettings(newSettings);
+        setSettingsForm(prev => ({
+          ...prev,
+          aiAgents: newAgents,
+          activeAiAgentId: newAgent.id
+        }));
+        localStorage.setItem('kx_settings', JSON.stringify(newSettings));
+      }
+    } else if (action.type === 'save_engram') {
+      saveMemory({
+        title: action.payload?.title || 'Memoria guardada',
+        content: action.payload?.content || '',
+        type: action.payload?.type || 'convention',
+        topicKey: action.payload?.topicKey
+      });
+    }
+  };
+
   const addLocal = () => {
     const id = `tab-${Date.now()}`
-    setTabs([...tabs, { id, type: 'local', title: `🖥️ Local ${tabs.length + 1}` }])
+    setTabs([...tabs, { id, type: 'local', title: `Local ${tabs.length + 1}` }])
     setActiveTab(id)
   }
 
   const openSavedSession = (session: SavedSession) => {
     const id = `tab-${Date.now()}`
-    setTabs([...tabs, { id, type: session.type || 'ssh', title: `🔒 ${session.name}`, config: session.config }])
+    setTabs([...tabs, { id, type: session.type || 'ssh', title: session.name, config: session.config }])
     setActiveTab(id)
   }
 
@@ -442,26 +519,50 @@ function App() {
     }, 3000)
   }
 
-  const testAiProfile = async (profile: AiProfile) => {
-    setProfileTestStatus(prev => ({...prev, [profile.id]: 'testing'}));
-    try {
-      if (profile.provider === 'ollama') {
+  const testAiProfile = async (profile: AiProfile, autoSelectModel = false) => {
+    if (!profile) return;
+    
+    if (profile.provider === 'ollama') {
+      setProfileTestStatus(prev => ({...prev, [profile.id]: 'testing'}));
+      try {
         const res = await (window as any).electronAPI.runOllamaList();
         if (res.success) {
           const lines = res.data.split('\n').filter((l: string) => l.trim() !== '');
-          const models = lines.slice(1).map((l: string) => l.split(/\s+/)[0]);
+          const models = lines.slice(1).map((l: string) => l.split(/\s+/)[0]).filter(Boolean);
           if (models.length > 0) {
             setProfileModels(prev => ({...prev, [profile.id]: models}));
+            if (autoSelectModel) {
+              setSettingsForm(prev => {
+                const currentIdx = prev.aiProfiles?.findIndex(p => p.id === profile.id) ?? -1;
+                if (currentIdx === -1) return prev;
+                const currentProfile = prev.aiProfiles![currentIdx];
+                if (!currentProfile.model || !models.includes(currentProfile.model)) {
+                  const updated = [...(prev.aiProfiles || [])];
+                  updated[currentIdx] = { ...currentProfile, model: models[0] };
+                  return { ...prev, aiProfiles: updated };
+                }
+                return prev;
+              });
+            }
           }
           setProfileTestStatus(prev => ({...prev, [profile.id]: 'success'}));
         } else {
           setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
         }
-      } else {
-        if (!profile.apiKey && profile.provider !== 'custom') {
-          setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
-          return;
-        }
+      } catch (e) {
+        setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
+      }
+    } else {
+      if (!profile.apiKey && profile.provider !== 'custom') {
+        setProfileTestStatus(prev => ({...prev, [profile.id]: 'idle'}));
+        return;
+      }
+      if (!profile.baseUrl || profile.baseUrl.trim() === '') {
+        setProfileTestStatus(prev => ({...prev, [profile.id]: 'idle'}));
+        return;
+      }
+      setProfileTestStatus(prev => ({...prev, [profile.id]: 'testing'}));
+      try {
         const headers: any = {};
         if (profile.apiKey) headers['Authorization'] = `Bearer ${profile.apiKey}`;
         
@@ -471,20 +572,71 @@ function App() {
         const res = await (window as any).electronAPI.systemFetch(`${url}/models`, { headers });
         if (res.success) {
           const data = res.data;
-          if (data.data) {
-            const models = data.data.map((m: any) => m.id);
-            const chatModels = models.filter((m: string) => !m.includes('whisper') && !m.includes('tts') && !m.includes('dall-e') && !m.includes('embedding') && !m.includes('babbage') && !m.includes('davinci'));
-            setProfileModels(prev => ({...prev, [profile.id]: chatModels.length > 0 ? chatModels : models}));
+          if (data && Array.isArray(data.data)) {
+            const models = data.data.map((m: any) => (m.id || '').replace(/^models\//, '')).filter(Boolean);
+            const chatModels = models.filter((m: string) => 
+              !m.includes('whisper') && 
+              !m.includes('tts') && 
+              !m.includes('dall-e') && 
+              !m.includes('embedding') && 
+              !m.includes('babbage') && 
+              !m.includes('davinci') &&
+              !m.includes('aqa')
+            );
+            const finalModels = chatModels.length > 0 ? chatModels : models;
+            if (finalModels.length > 0) {
+              setProfileModels(prev => ({...prev, [profile.id]: finalModels}));
+              if (autoSelectModel) {
+                setSettingsForm(prev => {
+                  const currentIdx = prev.aiProfiles?.findIndex(p => p.id === profile.id) ?? -1;
+                  if (currentIdx === -1) return prev;
+                  const currentProfile = prev.aiProfiles![currentIdx];
+                  if (!currentProfile.model || !finalModels.includes(currentProfile.model)) {
+                    const updated = [...(prev.aiProfiles || [])];
+                    updated[currentIdx] = { ...currentProfile, model: finalModels[0] };
+                    return { ...prev, aiProfiles: updated };
+                  }
+                  return prev;
+                });
+              }
+            }
           }
           setProfileTestStatus(prev => ({...prev, [profile.id]: 'success'}));
         } else {
           setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
         }
+      } catch (e) {
+        setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
       }
-    } catch (e) {
-      setProfileTestStatus(prev => ({...prev, [profile.id]: 'error'}));
     }
   };
+
+  // Automatically test connection and fetch available models when editing a profile or changing its config
+  useEffect(() => {
+    if (!editingProfileId) return;
+    const profile = settingsForm.aiProfiles?.find(p => p.id === editingProfileId);
+    if (!profile) return;
+    
+    if (profile.provider === 'ollama') {
+      testAiProfile(profile, true);
+      return;
+    }
+
+    if (!profile.baseUrl || (!profile.apiKey && profile.provider !== 'custom')) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      testAiProfile(profile, true);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [
+    editingProfileId,
+    settingsForm.aiProfiles?.find(p => p.id === editingProfileId)?.provider,
+    settingsForm.aiProfiles?.find(p => p.id === editingProfileId)?.baseUrl,
+    settingsForm.aiProfiles?.find(p => p.id === editingProfileId)?.apiKey
+  ]);
 
   const handleGenerateAgent = async () => {
     if (!agentDescription.trim()) return;
@@ -539,10 +691,11 @@ function App() {
         }
 
         if (generatedPrompt) {
+          const promptText = cleanReasoningOutput(generatedPrompt).cleanContent.trim();
           const newAgent: AiAgent = {
             id: `agent_${Date.now()}`,
             name: t('newAgentGenerated', settingsForm.language),
-            systemPrompt: generatedPrompt.trim()
+            systemPrompt: promptText
           };
           setSettingsForm({...settingsForm, aiAgents: [...(settingsForm.aiAgents || []), newAgent]});
           setEditingAgentId(newAgent.id);
@@ -941,81 +1094,300 @@ function App() {
     }
   }
 
+  const isSessionActive = (session: SavedSession) => {
+    return tabs.some(t => {
+      if (session.type === 'gcp') {
+        return t.config?.gcpInstance === session.config?.gcpInstance && t.config?.gcpProject === session.config?.gcpProject;
+      }
+      return (t.config?.host && t.config.host === session.config?.host && t.config?.username === session.config?.username) || (t.title && t.title.includes(session.name));
+    });
+  };
+
+  const renderSessionItem = (session: SavedSession, showFolderPath: boolean = false) => {
+    const isActiveConnected = isSessionActive(session);
+    const isHovered = hoveredSessionId === session.id;
+    const parentFolder = showFolderPath && session.folderId ? folders.find(f => f.id === session.folderId) : null;
+
+    const port = session.config?.port || 22;
+    const isCustomPort = session.type === 'ssh' && port !== 22;
+    const subtitle = session.type === 'gcp'
+      ? `${session.config?.gcpInstance || 'gcp'} (${session.config?.gcpZone || 'zone'})`
+      : `${session.config?.username || 'user'}@${session.config?.host || 'host'}${isCustomPort ? `:${port}` : ''}`;
+
+    return (
+      <div 
+        key={session.id} 
+        draggable
+        onDragStart={(e) => onDragStart(e, 'session', session.id)}
+        onContextMenu={(e) => handleSessionContextMenu(e, session)}
+        onClick={() => openSavedSession(session)}
+        onMouseEnter={() => setHoveredSessionId(session.id)}
+        onMouseLeave={() => setHoveredSessionId(null)}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          justifyContent: 'space-between', 
+          padding: '6px 8px', 
+          margin: '2px 0',
+          cursor: 'pointer', 
+          borderRadius: '6px', 
+          backgroundColor: isHovered ? 'var(--bg-hover)' : 'transparent',
+          border: isActiveConnected ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid transparent',
+          transition: 'all 0.15s ease',
+          gap: '8px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+          <div style={{
+            width: '26px',
+            height: '26px',
+            borderRadius: '6px',
+            backgroundColor: session.type === 'gcp' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            {session.type === 'gcp' ? (
+              <FaCloud size={12} color="#38bdf8" />
+            ) : (
+              <VscServer size={14} color="#c084fc" />
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ 
+                fontSize: '0.85rem', 
+                fontWeight: 600, 
+                color: 'var(--text-main)', 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap' 
+              }}>
+                {session.name}
+              </span>
+              {isActiveConnected && (
+                <span 
+                  title="Sesión conectada en una pestaña"
+                  style={{ 
+                    width: '6px', 
+                    height: '6px', 
+                    borderRadius: '50%', 
+                    backgroundColor: '#22c55e', 
+                    boxShadow: '0 0 6px #22c55e',
+                    flexShrink: 0 
+                  }} 
+                />
+              )}
+            </div>
+            <span style={{ 
+              fontSize: '0.72rem', 
+              color: 'var(--text-muted)', 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis', 
+              whiteSpace: 'nowrap' 
+            }}>
+              {parentFolder ? `${parentFolder.name} • ${subtitle}` : subtitle}
+            </span>
+          </div>
+        </div>
+
+        {/* Quick action buttons on hover */}
+        {isHovered ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => openSavedSession(session)}
+              title="Conectar sesión"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#22c55e',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <VscPlay size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => editSession(session.id)}
+              title="Editar configuración"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <VscEdit size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(t('confirmDeleteSession', settings.language) || `¿Eliminar la sesión "${session.name}"?`)) {
+                  deleteSession(session.id);
+                }
+              }}
+              title="Eliminar sesión"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ef4444',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <VscTrash size={12} />
+            </button>
+          </div>
+        ) : (
+          isCustomPort ? (
+            <span style={{ 
+              fontSize: '0.68rem', 
+              color: 'var(--text-muted)', 
+              backgroundColor: 'rgba(255,255,255,0.06)',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+              flexShrink: 0
+            }}>
+              :{port}
+            </span>
+          ) : session.type === 'gcp' ? (
+            <span style={{ 
+              fontSize: '0.65rem', 
+              color: '#38bdf8', 
+              backgroundColor: 'rgba(56,189,248,0.1)',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              fontWeight: 600,
+              flexShrink: 0
+            }}>
+              GCP
+            </span>
+          ) : null
+        )}
+      </div>
+    );
+  };
+
   // Recursive Tree Rendering
   const renderTree = (parentId: string | null, depth: number = 0) => {
     const childFolders = folders.filter(f => f.parentId === parentId);
     const childSessions = savedSessions.filter(s => s.folderId === parentId);
 
     return (
-      <div style={{ marginLeft: depth > 0 ? '15px' : '0' }}>
-        {childFolders.map(folder => (
-          <div key={folder.id} style={{ marginBottom: '2px' }}>
-            <div 
-              draggable
-              onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
-              onDragOver={(e) => onDragOver(e, folder.id)}
-              onDragLeave={onDragLeave}
-              onDrop={(e) => onDrop(e, folder.id)}
-              onClick={() => toggleFolder(folder.id)}
-              onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-              style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                padding: '6px 10px', 
-                backgroundColor: dragOverId === folder.id ? 'var(--accent)' : 'var(--bg-editor)', 
-                borderRadius: '4px', 
-                cursor: 'pointer', 
-                userSelect: 'none',
-                border: '1px solid transparent',
-                transition: 'background-color 0.2s'
-              }}
-            >
-              <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
-                {folder.isOpen ? '📂' : '📁'} {folder.name}
-              </span>
-            </div>
-            
-            {folder.isOpen && (
-              <div style={{ marginTop: '2px' }}>
-                {renderTree(folder.id, depth + 1)}
-                {folders.filter(f => f.parentId === folder.id).length === 0 && savedSessions.filter(s => s.folderId === folder.id).length === 0 && (
-                  <div style={{ padding: '4px 10px', marginLeft: '15px', color: '#666', fontSize: '0.85rem', fontStyle: 'italic' }}>Empty folder</div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+      <div style={{ marginLeft: depth > 0 ? '12px' : '0' }}>
+        {childFolders.map(folder => {
+          const sessionsInFolder = savedSessions.filter(s => s.folderId === folder.id);
+          return (
+            <div key={folder.id} style={{ marginBottom: '2px' }}>
+              <div 
+                draggable
+                onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
+                onDragOver={(e) => onDragOver(e, folder.id)}
+                onDragLeave={onDragLeave}
+                onDrop={(e) => onDrop(e, folder.id)}
+                onClick={() => toggleFolder(folder.id)}
+                onContextMenu={(e) => handleFolderContextMenu(e, folder)}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  justifyContent: 'space-between', 
+                  padding: '6px 8px', 
+                  backgroundColor: dragOverId === folder.id ? 'var(--accent)' : 'var(--bg-editor)', 
+                  borderRadius: '6px', 
+                  cursor: 'pointer', 
+                  userSelect: 'none',
+                  border: '1px solid transparent',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                    {folder.isOpen ? <VscChevronDown size={14} /> : <VscChevronRight size={14} />}
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', color: '#38bdf8' }}>
+                    {folder.isOpen ? <VscFolderOpened size={16} /> : <VscFolder size={16} />}
+                  </span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                    {folder.name}
+                  </span>
+                </div>
 
-        {childSessions.map(session => (
-          <div 
-            key={session.id} 
-            draggable
-            onDragStart={(e) => onDragStart(e, 'session', session.id)}
-            onContextMenu={(e) => handleSessionContextMenu(e, session)}
-            onDoubleClick={() => openSavedSession(session)}
-            style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              padding: '6px 10px', 
-              cursor: 'pointer', 
-              borderRadius: '4px', 
-              fontSize: '0.9rem',
-              backgroundColor: 'transparent'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <span>🖥️ {session.name}</span>
-          </div>
-        ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    padding: '1px 6px', 
+                    backgroundColor: 'rgba(255,255,255,0.08)', 
+                    borderRadius: '10px', 
+                    color: 'var(--text-muted)' 
+                  }}>
+                    {sessionsInFolder.length}
+                  </span>
+                  <button
+                    type="button"
+                    title="Nueva sesión en esta carpeta"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSessionId(null);
+                      setSshForm({ name: '', host: '', port: 22, username: '', password: '', privateKeyPath: '', folderId: folder.id, usePrivateKey: false, type: 'ssh', gcpProject: '', gcpZone: '', gcpInstance: '' });
+                      setTestStatus('idle');
+                      setTestMessage('');
+                      setShowSessionModal(true);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <VscAdd size={12} />
+                  </button>
+                </div>
+              </div>
+              
+              {folder.isOpen && (
+                <div style={{ marginTop: '2px', paddingLeft: '4px', borderLeft: '1px solid var(--border-color)' }}>
+                  {renderTree(folder.id, depth + 1)}
+                  {folders.filter(f => f.parentId === folder.id).length === 0 && sessionsInFolder.length === 0 && (
+                    <div style={{ padding: '6px 12px', marginLeft: '12px', color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                      Carpeta vacía
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {childSessions.map(session => renderSessionItem(session, false))}
       </div>
     );
   }
 
   
-  if (vaultStatus !== 'unlocked') {
-    return (
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+  return (
+    <>
+      {vaultStatus !== 'unlocked' && (
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+          <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
         
         {/* Logo on Start Screen */}
         <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1087,6 +1459,16 @@ function App() {
                   style={{ marginTop: '10px', padding: '10px', backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px dashed var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
                 >
                   + {t('createNewVault', settings.language)}
+                </button>
+                <button 
+                  onClick={() => { 
+                    setVaultStatus('unlocked');
+                    setCurrentVaultId(null);
+                    setMasterPassword('');
+                  }}
+                  style={{ marginTop: '5px', padding: '10px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.9rem' }}
+                >
+                  {t('localSessionsOnly', settings.language)}
                 </button>
               </div>
             </div>
@@ -1290,28 +1672,73 @@ function App() {
             </form>
           )}
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', overflow: 'hidden' }}>
+          </div>
+        </div>
+      )}
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', overflow: 'hidden' }}>
       
       {/* Sidebar */}
-      <div style={{ width: '260px', backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px 20px 10px 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-            <img src="/vinterm.png" alt="VinTerm Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-main)' }}>VinTerm</h2>
+      <div style={{ width: '280px', backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        {/* Sidebar Header & Window Drag Area (Only top row for Mac traffic lights) */}
+        <div className="app-drag-region" style={{ 
+          height: '46px',
+          paddingTop: '8px', 
+          paddingRight: '14px', 
+          paddingBottom: '4px', 
+          paddingLeft: typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac') ? '78px' : '14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0
+        }}>
+          <div className="app-no-drag" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <img src="/vinterm.png" alt="VinTerm Logo" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+            <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '0.3px' }}>VinTerm</h2>
           </div>
-          
+          <span style={{ 
+            fontSize: '10px', 
+            fontWeight: 800, 
+            backgroundColor: 'rgba(34, 197, 94, 0.12)', 
+            color: '#22c55e', 
+            border: '1px solid rgba(34, 197, 94, 0.25)',
+            padding: '2px 7px', 
+            borderRadius: '10px' 
+          }}>
+            {savedSessions.length} {savedSessions.length === 1 ? 'HOST' : 'HOSTS'}
+          </span>
+        </div>
+        
+        {/* Sidebar Actions & Search Bar (Full Width, Aligned with Tree) */}
+        <div style={{ padding: '4px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+          {/* Main Action: Local Terminal */}
           <button 
+            className="app-no-drag"
             onClick={addLocal}
-            style={{ width: '100%', padding: '8px', marginBottom: '10px', cursor: 'pointer', backgroundColor: 'var(--accent)', color: 'var(--button-text)', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
+            title={settings.language === 'en' ? 'Open local terminal tab' : 'Abrir terminal local'}
+            style={{ 
+              width: '100%', 
+              padding: '8px 12px', 
+              cursor: 'pointer', 
+              backgroundColor: 'var(--accent)', 
+              color: 'var(--button-text)', 
+              border: 'none', 
+              borderRadius: '6px', 
+              fontWeight: 700,
+              fontSize: '0.84rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              transition: 'transform 0.1s, opacity 0.15s'
+            }}
+          >
+            <VscTerminal size={15} />
             {t('localTerminal', settings.language)}
           </button>
           
-          <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
+          {/* Secondary Actions: New Server & Folder */}
+          <div className="app-no-drag" style={{ display: 'flex', gap: '6px' }}>
             <button 
               onClick={() => {
                 setEditingSessionId(null);
@@ -1320,89 +1747,292 @@ function App() {
                 setTestMessage('');
                 setShowSessionModal(true);
               }} 
-              style={{ flex: 1, padding: '8px', backgroundColor: 'var(--border-color)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', cursor: 'pointer' }}
-            >  + {t('newSession', settings.language)}
+              title={settings.language === 'en' ? 'Add new SSH or GCP session' : 'Nueva sesión SSH o GCP'}
+              style={{ 
+                flex: 1, 
+                padding: '7px 8px', 
+                backgroundColor: 'var(--bg-editor)', 
+                color: 'var(--text-main)', 
+                border: '1px solid var(--border-light)', 
+                borderRadius: '6px', 
+                cursor: 'pointer',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden'
+              }}
+            >
+              <VscServer size={13} color="#c084fc" />
+              <span>+ {settings.language === 'en' ? 'Session' : 'Sesión'}</span>
             </button>
             <button 
               onClick={() => setShowFolderModal(true)}
-              style={{ flex: 1, padding: '8px', cursor: 'pointer', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '4px', fontSize: '0.8rem' }}>
-              + {t('newFolder', settings.language)}
+              title={settings.language === 'en' ? 'Create new organizing folder' : 'Nueva carpeta'}
+              style={{ 
+                flex: 1, 
+                padding: '7px 8px', 
+                cursor: 'pointer', 
+                backgroundColor: 'var(--bg-editor)', 
+                color: 'var(--text-main)', 
+                border: '1px solid var(--border-light)', 
+                borderRadius: '6px', 
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden'
+              }}
+            >
+              <VscFolder size={13} color="#38bdf8" />
+              <span>+ {settings.language === 'en' ? 'Folder' : 'Carpeta'}</span>
             </button>
+          </div>
+
+          {/* Quick Filter / Search Bar */}
+          <div className="app-no-drag" style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', pointerEvents: 'none' }}>
+              <VscSearch size={13} />
+            </span>
+            <input
+              type="text"
+              value={sessionSearch}
+              onChange={(e) => setSessionSearch(e.target.value)}
+              placeholder={settings.language === 'en' ? 'Search sessions, host, IP...' : 'Buscar servidor, IP, usuario...'}
+              style={{
+                width: '100%',
+                padding: '6px 26px 6px 28px',
+                fontSize: '0.78rem',
+                backgroundColor: 'var(--bg-input)',
+                color: 'var(--text-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {sessionSearch && (
+              <button
+                type="button"
+                onClick={() => setSessionSearch('')}
+                title="Limpiar búsqueda"
+                style={{
+                  position: 'absolute',
+                  right: '6px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <VscClose size={12} />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Sessions Tree */}
+        {/* Sessions Tree / Filtered Results */}
         <div 
-          style={{ flex: 1, overflowY: 'auto', padding: '0 10px', backgroundColor: dragOverId === null ? 'transparent' : 'var(--bg-hover-light)' }}
+          style={{ 
+            flex: 1, 
+            overflowY: 'auto', 
+            padding: '2px 12px 12px 12px', 
+            backgroundColor: dragOverId === null ? 'transparent' : 'var(--bg-hover-light)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px'
+          }}
           onDragOver={(e) => onDragOver(e, null)}
           onDragLeave={onDragLeave}
           onDrop={(e) => onDrop(e, null)}
         >
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', paddingLeft: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-            {t('sessions', settings.language)}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            fontSize: '0.72rem', 
+            color: 'var(--text-muted)', 
+            margin: '2px 0 6px 2px', 
+            fontWeight: 700, 
+            letterSpacing: '0.6px',
+            textTransform: 'uppercase' 
+          }}>
+            <span>{sessionSearch.trim() ? (settings.language === 'en' ? 'Search Results' : 'Resultados') : t('sessions', settings.language)}</span>
+            <span style={{ fontSize: '0.68rem', opacity: 0.6 }}>
+              {savedSessions.length} {savedSessions.length === 1 ? 'host' : 'hosts'}
+            </span>
           </div>
-          
-          {renderTree(null)}
 
+          {sessionSearch.trim() ? (
+            (() => {
+              const query = sessionSearch.trim().toLowerCase();
+              const matching = savedSessions.filter(s => {
+                const nameMatch = (s.name || '').toLowerCase().includes(query);
+                const hostMatch = (s.config?.host || '').toLowerCase().includes(query);
+                const userMatch = (s.config?.username || '').toLowerCase().includes(query);
+                const gcpMatch = (s.config?.gcpInstance || '').toLowerCase().includes(query) || (s.config?.gcpProject || '').toLowerCase().includes(query);
+                return nameMatch || hostMatch || userMatch || gcpMatch;
+              });
+
+              if (matching.length === 0) {
+                return (
+                  <div style={{ padding: '24px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                    <VscSearch size={22} style={{ opacity: 0.5 }} />
+                    <span>No se encontraron servidores con "{sessionSearch}"</span>
+                  </div>
+                );
+              }
+
+              return matching.map(session => renderSessionItem(session, true));
+            })()
+          ) : (
+            <>
+              {savedSessions.length === 0 && folders.length === 0 ? (
+                <div style={{ 
+                  padding: '24px 12px', 
+                  textAlign: 'center', 
+                  color: 'var(--text-muted)', 
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <VscServer size={24} style={{ opacity: 0.4 }} />
+                  <span>No hay servidores guardados. Haz clic en <strong>+ {t('newSession', settings.language)}</strong> para agregar uno.</span>
+                </div>
+              ) : (
+                renderTree(null)
+              )}
+            </>
+          )}
         </div>
         
-        {/* Support Button */}
-        <div 
-          onClick={() => {
-            if (typeof (window as any).electronAPI.openExternal === 'function') {
-              (window as any).electronAPI.openExternal('https://ko-fi.com/kapssco');
-            } else {
-              window.open('https://ko-fi.com/kapssco', '_blank');
-            }
-          }}
-          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s', color: '#ff5e5b' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-        >
-          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>☕</span>
-          <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Support VinTerm</span>
-        </div>
-        
-        {/* Switch Vault Button */}
-        <div 
-          onClick={() => {
-            setVaultStatus('selecting');
-            setFolders([]);
-            setSavedSessions([]);
-          }}
-          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-        >
-          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>🔐</span>
-          <span style={{ color: 'var(--text-muted)', fontWeight: '500', fontSize: '0.9rem' }}>{t('switchVault', settings.language) || 'Switch Vault'}</span>
-        </div>
-
-        {/* Tools Menu */}
-        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-            {settings.language === 'en' ? 'Tools' : 'Herramientas'}
-          </div>
-          <div 
+        {/* Compact Native Bottom Toolbar */}
+        <div style={{ 
+          padding: '8px 12px', 
+          borderTop: '1px solid var(--border-color)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          backgroundColor: 'rgba(0,0,0,0.18)'
+        }}>
+          {/* Monitoring Button */}
+          <button 
+            type="button"
             onClick={openDashboardManager}
-            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 10px', borderRadius: '4px', transition: 'background-color 0.2s', marginLeft: '-10px' }}
+            title={settings.language === 'en' ? 'Monitoring & Dashboards' : 'Monitoreo y Paneles'}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '6px', 
+              background: 'none', 
+              border: 'none', 
+              color: '#4ade80', 
+              cursor: 'pointer',
+              transition: 'background-color 0.15s'
+            }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
-            <span style={{ fontSize: '1.2rem', marginRight: '10px', color: '#4ade80' }}>📊</span>
-            <span style={{ color: 'var(--text-main)', fontSize: '0.9rem' }}>{settings.language === 'en' ? 'Monitoring' : 'Monitoreo'}</span>
-          </div>
-        </div>
+            <VscGraph size={17} />
+          </button>
 
-        {/* Bottom Settings Button */}
-        <div 
-          onClick={openSettings}
-          style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-        >
-          <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>⚙️</span>
-          <span style={{ color: 'var(--text-muted)', fontWeight: '500', fontSize: '0.9rem' }}>{t('settingsTitle', settings.language)}</span>
+          {/* Switch Vault Button */}
+          <button 
+            type="button"
+            onClick={() => {
+              setVaultStatus('selecting');
+              setFolders([]);
+              setSavedSessions([]);
+            }}
+            title={t('switchVault', settings.language) || 'Cambiar Bóveda'}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '6px', 
+              background: 'none', 
+              border: 'none', 
+              color: '#eab308', 
+              cursor: 'pointer',
+              transition: 'background-color 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <VscLock size={16} />
+          </button>
+
+          {/* Settings Button */}
+          <button 
+            type="button"
+            onClick={openSettings}
+            title={t('settingsTitle', settings.language)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '6px', 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-main)', 
+              cursor: 'pointer',
+              transition: 'background-color 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <VscGear size={17} />
+          </button>
+
+          {/* Support Kofi Button */}
+          <button 
+            type="button"
+            onClick={() => {
+              if (typeof (window as any).electronAPI.openExternal === 'function') {
+                (window as any).electronAPI.openExternal('https://ko-fi.com/kapssco');
+              } else {
+                window.open('https://ko-fi.com/kapssco', '_blank');
+              }
+            }}
+            title="Apoyar VinTerm (Ko-fi)"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '6px', 
+              background: 'none', 
+              border: 'none', 
+              color: '#ff5e5b', 
+              cursor: 'pointer',
+              transition: 'background-color 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <FaCoffee size={15} />
+          </button>
         </div>
       </div>
 
@@ -1410,13 +2040,14 @@ function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         
         {/* Tabs Bar */}
-        <div style={{ height: '40px', backgroundColor: 'var(--bg-editor)', display: 'flex', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
+        <div className="app-drag-region" style={{ height: '40px', backgroundColor: 'var(--bg-editor)', display: 'flex', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', alignItems: 'center' }}>
           {tabs.map(tab => (
             <div 
               key={tab.id}
+              className="app-no-drag"
               onClick={() => setActiveTab(tab.id)}
               style={{ 
-                padding: '0 15px', 
+                padding: '0 14px', 
                 height: '40px', 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -1424,17 +2055,79 @@ function App() {
                 backgroundColor: activeTab === tab.id ? settings.background : 'transparent',
                 borderTop: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
                 borderRight: '1px solid var(--border-color)',
-                fontSize: '0.9rem',
-                minWidth: '150px',
-                justifyContent: 'space-between'
+                fontSize: '0.85rem',
+                minWidth: '130px',
+                maxWidth: '220px',
+                justifyContent: 'space-between',
+                transition: 'background-color 0.15s'
               }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '10px', color: activeTab === tab.id ? settings.foreground : 'var(--text-muted)' }}>
-                {tab.title}
-              </span>
-              <span onClick={(e) => closeTab(e, tab.id)} style={{ color: 'var(--text-muted)', padding: '0 5px' }}>x</span>
+              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', marginRight: '8px' }}>
+                {tab.type === 'local' ? (
+                  <VscTerminal size={14} style={{ color: '#22c55e', marginRight: '7px', flexShrink: 0 }} />
+                ) : tab.type === 'gcp' ? (
+                  <FaCloud size={13} style={{ color: '#38bdf8', marginRight: '7px', flexShrink: 0 }} />
+                ) : tab.type === 'dashboard' || tab.type === 'dashboard-view' ? (
+                  <VscGraph size={14} style={{ color: '#4ade80', marginRight: '7px', flexShrink: 0 }} />
+                ) : (
+                  <VscServer size={14} style={{ color: '#c084fc', marginRight: '7px', flexShrink: 0 }} />
+                )}
+                <span style={{ 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis', 
+                  whiteSpace: 'nowrap', 
+                  color: activeTab === tab.id ? settings.foreground : 'var(--text-muted)',
+                  fontWeight: activeTab === tab.id ? 600 : 400
+                }}>
+                  {tab.title ? tab.title.replace(/^[🖥️🔒📊☕🔐📁]\s*/, '') : 'Terminal'}
+                </span>
+              </div>
+              <button 
+                onClick={(e) => closeTab(e, tab.id)} 
+                title="Cerrar pestaña"
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: 'var(--text-muted)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  padding: '3px', 
+                  borderRadius: '3px', 
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.2)'; e.currentTarget.style.color = '#ef4444'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+              >
+                <VscClose size={13} />
+              </button>
             </div>
           ))}
+          <button 
+            className="app-no-drag"
+            onClick={addLocal}
+            title="Nueva terminal local"
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-muted)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              height: '28px', 
+              width: '28px', 
+              marginLeft: '6px', 
+              borderRadius: '4px', 
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--foreground)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+          >
+            <VscAdd size={15} />
+          </button>
         </div>
 
         {/* Terminal View */}
@@ -1464,13 +2157,14 @@ function App() {
                   config={tab.config} 
                   isActive={activeTab === tab.id}
                   settings={settings}
+                  onApplyAction={handleApplyAction}
                 />
               )}
             </div>
           ))}
           {tabs.length === 0 && (
             <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#666', flexDirection: 'column' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🖥️</div>
+              <VscTerminal size={52} color="var(--border-color)" style={{ marginBottom: '16px', opacity: 0.6 }} />
               <div>Select a session from the sidebar or open a local terminal</div>
             </div>
           )}
@@ -1485,10 +2179,12 @@ function App() {
             <button 
               type="button" 
               onClick={() => setShowSettingsModal(false)}
-              style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', zIndex: 10 }}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', borderRadius: '4px', transition: 'all 0.15s' }}
               title={t('cancel', settings.language)}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = '#ef4444'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
             >
-              ✕
+              <VscClose size={20} />
             </button>
 
             {/* Sidebar Tabs */}
@@ -1657,11 +2353,11 @@ function App() {
                           onClick={() => {
                             const newProfile: AiProfile = {
                               id: `profile_${Date.now()}`,
-                              name: t('defaultNewProfile', settings.language),
-                              provider: 'custom',
-                              baseUrl: '',
+                              name: 'Google Gemini',
+                              provider: 'google',
+                              baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
                               apiKey: '',
-                              model: ''
+                              model: 'gemini-2.5-flash'
                             };
                             setSettingsForm({...settingsForm, aiProfiles: [...(settingsForm.aiProfiles || []), newProfile]});
                             setEditingProfileId(newProfile.id);
@@ -1670,6 +2366,89 @@ function App() {
                         >
                           + {t('addProfile', settings.language)}
                         </button>
+
+                        {/* Gentle-AI Stack Card (Gentleman, Engram, Context7) */}
+                        <div style={{ marginTop: '20px', padding: '16px', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <FaBrain style={{ color: '#a855f7', fontSize: '1.2rem' }} />
+                              <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-main)' }}>Gentle-AI Stack (Gentleman • Engram • Context7)</h3>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowEngramModal(true)}
+                              style={{ padding: '4px 10px', fontSize: '0.8rem', backgroundColor: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              🧠 Ver Memorias Engram
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.83rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={settingsForm.gentleAi?.enableGentleman !== false}
+                                onChange={e => setSettingsForm({
+                                  ...settingsForm,
+                                  gentleAi: { ...(settingsForm.gentleAi || {}), enableGentleman: e.target.checked }
+                                })}
+                              />
+                              <span><strong>Modo Gentleman:</strong> Estilo senior pragmático, clean code y respuestas concisas orientadas a la acción sin obviedades.</span>
+                            </label>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.83rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={settingsForm.gentleAi?.enableEngram !== false}
+                                onChange={e => setSettingsForm({
+                                  ...settingsForm,
+                                  gentleAi: { ...(settingsForm.gentleAi || {}), enableEngram: e.target.checked }
+                                })}
+                              />
+                              <span><strong>Memoria Persistente (Engram):</strong> Almacena y recuerda decisiones técnicas, convenciones y soluciones entre sesiones.</span>
+                            </label>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.83rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={settingsForm.gentleAi?.enableContext7 !== false}
+                                onChange={e => setSettingsForm({
+                                  ...settingsForm,
+                                  gentleAi: { ...(settingsForm.gentleAi || {}), enableContext7: e.target.checked }
+                                })}
+                              />
+                              <span><strong>Context7 (Docs al Día):</strong> Inyecta documentación oficial y flags modernos de Docker, K8s, Next.js, Bun, FFmpeg, etc.</span>
+                            </label>
+
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.83rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={settingsForm.gentleAi?.enableGuardrails !== false}
+                                onChange={e => setSettingsForm({
+                                  ...settingsForm,
+                                  gentleAi: { ...(settingsForm.gentleAi || {}), enableGuardrails: e.target.checked }
+                                })}
+                              />
+                              <span><strong>Gentleman Guardrails:</strong> Intercepta comandos destructivos (rm -rf /, formateos) y oculta secretos (.env, claves SSH).</span>
+                            </label>
+
+                            <div style={{ marginTop: '4px' }}>
+                              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                Context7 API Key (Opcional - usa caché y base de conocimiento local por defecto):
+                              </label>
+                              <input
+                                type="password"
+                                placeholder="ctx7_..."
+                                value={settingsForm.gentleAi?.context7ApiKey || ''}
+                                onChange={e => setSettingsForm({
+                                  ...settingsForm,
+                                  gentleAi: { ...(settingsForm.gentleAi || {}), context7ApiKey: e.target.value }
+                                })}
+                                style={{ width: '100%', padding: '6px 8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -1684,6 +2463,8 @@ function App() {
                           const index = settingsForm.aiProfiles?.findIndex(p => p.id === editingProfileId) ?? -1;
                           if (index === -1) return null;
                           const profile = settingsForm.aiProfiles![index];
+                          const hasLoadedModels = profileModels[profile.id] && profileModels[profile.id].length > 0;
+                          const isTesting = profileTestStatus[profile.id] === 'testing';
                           
                           return (
                             <div style={{ border: '1px solid var(--border-light)', padding: '15px', borderRadius: '8px', backgroundColor: 'var(--bg-input)' }}>
@@ -1701,66 +2482,122 @@ function App() {
                                 />
                               </div>
 
-                              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                                <div style={{ flex: 1 }}>
-                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('aiProvider', settings.language)}</label>
-                                  <select 
-                                    value={profile.provider} 
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('aiProvider', settings.language)}</label>
+                                <select 
+                                  value={profile.provider} 
+                                  onChange={e => {
+                                    const provider = e.target.value as 'openai' | 'google' | 'opencode' | 'ollama' | 'deepseek' | 'custom';
+                                    const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                    updatedProfiles[index].provider = provider;
+                                    if (provider === 'google') {
+                                      updatedProfiles[index].baseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
+                                      updatedProfiles[index].model = 'gemini-2.5-flash';
+                                      if (!profile.name || profile.name.startsWith('Default') || profile.name.includes('OpenAI') || profile.name.includes('Profile')) updatedProfiles[index].name = 'Google Gemini';
+                                    } else if (provider === 'opencode') {
+                                      updatedProfiles[index].baseUrl = 'https://opencode.ai/zen/go/v1';
+                                      updatedProfiles[index].model = 'deepseek-chat';
+                                      if (!profile.name || profile.name.startsWith('Default') || profile.name.includes('Profile')) updatedProfiles[index].name = 'OpenCode Go';
+                                    } else if (provider === 'openai') {
+                                      updatedProfiles[index].baseUrl = 'https://api.openai.com/v1';
+                                      updatedProfiles[index].model = 'gpt-4o-mini';
+                                      if (!profile.name || profile.name.startsWith('Default') || profile.name.includes('Profile')) updatedProfiles[index].name = 'OpenAI';
+                                    } else if (provider === 'deepseek') {
+                                      updatedProfiles[index].baseUrl = 'https://api.deepseek.com/v1';
+                                      updatedProfiles[index].model = 'deepseek-chat';
+                                      if (!profile.name || profile.name.startsWith('Default') || profile.name.includes('Profile')) updatedProfiles[index].name = 'DeepSeek';
+                                    } else if (provider === 'ollama') {
+                                      updatedProfiles[index].baseUrl = 'http://localhost:11434/v1';
+                                      updatedProfiles[index].model = 'llama3';
+                                      if (!profile.name || profile.name.startsWith('Default') || profile.name.includes('Profile')) updatedProfiles[index].name = 'Ollama Local';
+                                    } else if (provider === 'custom') {
+                                      updatedProfiles[index].baseUrl = updatedProfiles[index].baseUrl || 'http://localhost:1234/v1';
+                                    }
+                                    setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                  }} 
+                                  style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                >
+                                  <option value="google">Google (Gemini)</option>
+                                  <option value="opencode">OpenCode (OpenCode Go)</option>
+                                  <option value="openai">OpenAI (ChatGPT)</option>
+                                  <option value="deepseek">DeepSeek</option>
+                                  <option value="ollama">Ollama (Local)</option>
+                                  <option value="custom">Custom (LMStudio, Groq, etc.)</option>
+                                </select>
+                              </div>
+
+                              {profile.provider !== 'ollama' && (
+                                <div style={{ marginBottom: '15px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>API Key</label>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--accent)' }}>{t('apiKeyHint', settings.language)}</span>
+                                  </div>
+                                  <input 
+                                    type="password" 
+                                    value={profile.apiKey} 
+                                    placeholder={profile.provider === 'google' ? 'AIzaSy...' : profile.provider === 'opencode' ? 'sk-...' : 'sk-...'}
                                     onChange={e => {
-                                      const provider = e.target.value as 'openai' | 'ollama' | 'deepseek' | 'custom';
                                       const updatedProfiles = [...(settingsForm.aiProfiles || [])];
-                                      updatedProfiles[index].provider = provider;
-                                      if (provider === 'openai') {
-                                        updatedProfiles[index].baseUrl = 'https://api.openai.com/v1';
-                                        updatedProfiles[index].model = 'gpt-4o-mini';
-                                      } else if (provider === 'ollama') {
-                                        updatedProfiles[index].baseUrl = 'http://localhost:11434/v1';
-                                        updatedProfiles[index].model = 'llama3';
-                                      } else if (provider === 'deepseek') {
-                                        updatedProfiles[index].baseUrl = 'https://api.deepseek.com/v1';
-                                        updatedProfiles[index].model = 'deepseek-chat';
-                                      }
+                                      updatedProfiles[index].apiKey = e.target.value;
                                       setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
                                     }} 
-                                    style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
-                                  >
-                                    <option value="openai">OpenAI (ChatGPT)</option>
-                                    <option value="ollama">Ollama (Local)</option>
-                                    <option value="deepseek">DeepSeek</option>
-                                    <option value="custom">Custom (LMStudio, Groq, OpenCode)</option>
-                                  </select>
+                                    style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                  />
                                 </div>
-                                <div style={{ flex: 1 }}>
-                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('labelModel', settings.language)}</label>
-                                  {profileModels[profile.id] && profileModels[profile.id].length > 0 ? (
-                                    <select 
-                                      value={profile.model} 
-                                      onChange={e => {
-                                        const updatedProfiles = [...(settingsForm.aiProfiles || [])];
-                                        updatedProfiles[index].model = e.target.value;
-                                        setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
-                                      }} 
-                                      style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
-                                    >
-                                      {profileModels[profile.id].map(m => <option key={m} value={m}>{m}</option>)}
-                                    </select>
-                                  ) : (
+                              )}
+
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('labelModel', settings.language)}</label>
+                                {isTesting && !hasLoadedModels ? (
+                                  <select 
+                                    disabled 
+                                    style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', borderRadius: '4px', opacity: 0.7 }}
+                                  >
+                                    <option>⏳ {t('modelsLoading', settings.language)}</option>
+                                  </select>
+                                ) : hasLoadedModels ? (
+                                  <select 
+                                    value={profile.model} 
+                                    onChange={e => {
+                                      const updatedProfiles = [...(settingsForm.aiProfiles || [])];
+                                      updatedProfiles[index].model = e.target.value;
+                                      setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
+                                    }} 
+                                    style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px', fontWeight: '500' }}
+                                  >
+                                    {profileModels[profile.id].map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                                ) : (
+                                  <div>
                                     <input 
                                       type="text" 
                                       value={profile.model} 
+                                      placeholder="ej. gemini-2.5-flash"
                                       onChange={e => {
                                         const updatedProfiles = [...(settingsForm.aiProfiles || [])];
                                         updatedProfiles[index].model = e.target.value;
                                         setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
                                       }} 
-                                      style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                      style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
                                     />
-                                  )}
-                                </div>
+                                    {profile.provider !== 'ollama' && !profile.apiKey && (
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                        💡 {t('apiKeyRequiredForModels', settings.language)}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
 
                               <div style={{ marginBottom: '15px' }}>
-                                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Base URL</label>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Base URL</label>
+                                  {['openai', 'google', 'opencode', 'deepseek', 'ollama'].includes(profile.provider) && (
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                      <VscLock size={12} /> Auto-configurado
+                                    </span>
+                                  )}
+                                </div>
                                 <input 
                                   type="text" 
                                   value={profile.baseUrl} 
@@ -1769,31 +2606,15 @@ function App() {
                                     updatedProfiles[index].baseUrl = e.target.value;
                                     setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
                                   }} 
-                                  readOnly={profile.provider === 'openai' || profile.provider === 'deepseek'}
-                                  style={{ width: '100%', padding: '8px', backgroundColor: (profile.provider === 'openai' || profile.provider === 'deepseek') ? 'rgba(0,0,0,0.2)' : 'var(--bg-panel)', border: '1px solid var(--border-color)', color: (profile.provider === 'openai' || profile.provider === 'deepseek') ? 'var(--text-muted)' : 'var(--text-main)', borderRadius: '4px' }}
+                                  readOnly={['openai', 'google', 'opencode', 'deepseek'].includes(profile.provider)}
+                                  style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: ['openai', 'google', 'opencode', 'deepseek'].includes(profile.provider) ? 'rgba(0,0,0,0.2)' : 'var(--bg-panel)', border: '1px solid var(--border-color)', color: ['openai', 'google', 'opencode', 'deepseek'].includes(profile.provider) ? 'var(--text-muted)' : 'var(--text-main)', borderRadius: '4px' }}
                                 />
                               </div>
 
-                              {profile.provider !== 'ollama' && (
-                                <div style={{ marginBottom: '15px' }}>
-                                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>API Key</label>
-                                  <input 
-                                    type="password" 
-                                    value={profile.apiKey} 
-                                    onChange={e => {
-                                      const updatedProfiles = [...(settingsForm.aiProfiles || [])];
-                                      updatedProfiles[index].apiKey = e.target.value;
-                                      setSettingsForm({...settingsForm, aiProfiles: updatedProfiles});
-                                    }} 
-                                    style={{ width: '100%', padding: '8px', backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px' }}
-                                  />
-                                </div>
-                              )}
-
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
                                 <div>
-                                  {profileTestStatus[profile.id] === 'testing' && <span style={{ color: 'var(--text-muted)' }}>{t('testing', settings.language)}</span>}
-                                  {profileTestStatus[profile.id] === 'success' && <span style={{ color: 'var(--neon-green, #00ff00)', fontWeight: 'bold' }}>✅ {t('testSuccess', settings.language)}</span>}
+                                  {profileTestStatus[profile.id] === 'testing' && <span style={{ color: 'var(--text-muted)' }}>⏳ {t('testing', settings.language)}</span>}
+                                  {profileTestStatus[profile.id] === 'success' && <span style={{ color: 'var(--neon-green, #00ff00)', fontWeight: 'bold' }}>✅ {t('testSuccess', settings.language)} ({profileModels[profile.id]?.length || 0} modelos)</span>}
                                   {profileTestStatus[profile.id] === 'error' && <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>❌ {t('testFailed', settings.language)}</span>}
                                 </div>
                                 <button 
@@ -2129,7 +2950,7 @@ function App() {
                     transition: 'all 0.2s'
                   }}
                 >
-                  <FaTerminal size={14} />
+                  <VscServer size={14} color={sshForm.type === 'ssh' ? '#c084fc' : undefined} />
                   {t('standardSsh', settings.language)}
                 </div>
                 <div 
@@ -2146,7 +2967,7 @@ function App() {
                     transition: 'all 0.2s'
                   }}
                 >
-                  <FaCloud size={14} />
+                  <FaCloud size={14} color={sshForm.type === 'gcp' ? '#38bdf8' : undefined} />
                   {t('googleCloud', settings.language)}
                 </div>
               </div>
@@ -2314,27 +3135,29 @@ function App() {
           {contextMenu.type === 'session' && (
             <>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => editSession(contextMenu.targetId)}
               >
-                ✏️ Edit Session
+                <VscEdit size={14} color="#38bdf8" />
+                <span>Edit Session</span>
               </div>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem', color: '#ff6b6b' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', color: '#ff6b6b', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => deleteSession(contextMenu.targetId)}
               >
-                🗑️ {t('delete', settings.language)} Session
+                <VscTrash size={14} color="#ff6b6b" />
+                <span>{t('delete', settings.language)} Session</span>
               </div>
             </>
           )}
           {contextMenu.type === 'folder' && (
             <>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => {
@@ -2343,10 +3166,11 @@ function App() {
                   setContextMenu(null);
                 }}
               >
-                📁 {t('newFolder', settings.language)}
+                <VscFolder size={14} color="#f59e0b" />
+                <span>{t('newFolder', settings.language)}</span>
               </div>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => {
@@ -2358,10 +3182,11 @@ function App() {
                   setContextMenu(null);
                 }}
               >
-                🖥️ {t('newSession', settings.language)}
+                <VscServer size={14} color="#c084fc" />
+                <span>{t('newSession', settings.language)}</span>
               </div>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => {
@@ -2374,22 +3199,28 @@ function App() {
                   setContextMenu(null);
                 }}
               >
-                ✏️ {t('rename', settings.language) || 'Rename'}
+                <VscEdit size={14} color="#38bdf8" />
+                <span>{t('rename', settings.language) || 'Rename'}</span>
               </div>
               <div 
-                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.9rem', color: '#ff6b6b' }}
+                style={{ padding: '8px 15px', cursor: 'pointer', fontSize: '0.85rem', color: '#ff6b6b', display: 'flex', alignItems: 'center', gap: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--border-light)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => deleteFolder(contextMenu.targetId)}
               >
-                🗑️ {t('delete', settings.language) || 'Delete'}
+                <VscTrash size={14} color="#ff6b6b" />
+                <span>{t('delete', settings.language) || 'Delete'}</span>
               </div>
             </>
           )}
         </div>
       )}
 
+      {/* Engram Memory Manager Modal */}
+      <EngramModal isOpen={showEngramModal} onClose={() => setShowEngramModal(false)} />
+
     </div>
+    </>
   )
 }
 

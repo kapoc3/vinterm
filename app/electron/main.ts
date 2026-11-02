@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell as electronShell, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell as electronShell, Menu, clipboard } from 'electron'
 import { exec } from 'child_process'
 import * as path from 'path'
 import * as pty from 'node-pty'
@@ -38,11 +38,22 @@ let mainWindow: BrowserWindow | null = null
 app.setName('Vinterm')
 
 function createWindow() {
+  const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'Vinterm',
     icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/vinterm.png' : '../dist/vinterm.png'),
+    ...(isMac ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 14, y: 14 },
+      vibrancy: 'under-window',
+      visualEffectState: 'active'
+    } : isWin ? {
+      backgroundMaterial: 'mica'
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -66,6 +77,21 @@ function createWindow() {
     console.error(error);
   });
 
+  // Native context menu for inputs and textareas (Cut, Copy, Paste)
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    if (params.isEditable) {
+      Menu.buildFromTemplate([
+        { role: 'undo', label: 'Deshacer' },
+        { role: 'redo', label: 'Rehacer' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Cortar' },
+        { role: 'copy', label: 'Copiar' },
+        { role: 'paste', label: 'Pegar' },
+        { role: 'selectAll', label: 'Seleccionar todo' }
+      ]).popup();
+    }
+  });
+
   mainWindow.on('closed', () => {
     // Clear sessions to avoid background processes running after window close
     for (const [id, session] of sessions.entries()) {
@@ -82,51 +108,49 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') {
-    const template: any[] = [
-      {
-        label: 'Vinterm',
-        submenu: [
-          { role: 'about', label: 'About Vinterm' },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide', label: 'Hide Vinterm' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit', label: 'Quit Vinterm' }
-        ]
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'selectAll' }
-        ]
-      },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'reload' },
-          { role: 'forceReload' },
-          { role: 'toggleDevTools' },
-          { type: 'separator' },
-          { role: 'resetZoom' },
-          { role: 'zoomIn' },
-          { role: 'zoomOut' },
-          { type: 'separator' },
-          { role: 'togglefullscreen' }
-        ]
-      }
-    ];
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  }
+  const template: any[] = [
+    ...(process.platform === 'darwin' ? [{
+      label: 'Vinterm',
+      submenu: [
+        { role: 'about', label: 'About Vinterm' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide', label: 'Hide Vinterm' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit', label: 'Quit Vinterm' }
+      ]
+    }] : []),
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
   createWindow()
 
@@ -148,6 +172,90 @@ app.on('window-all-closed', () => {
 const sessions = new Map<string, any>()
 const dashboardSessions = new Map<string, any>()
 
+// 120Hz IPC Frame Batcher for PTY streams to avoid UI freezing on large throughput
+interface BatcherSession {
+  buffer: string;
+  timer: NodeJS.Timeout | null;
+  instance: any;
+  isPaused: boolean;
+}
+const ptyBatchers = new Map<string, BatcherSession>();
+const HIGH_WATERMARK = 128 * 1024; // 128KB backpressure limit
+
+function setupPtyBatcher(id: string, instance: any) {
+  ptyBatchers.set(id, {
+    buffer: '',
+    timer: null,
+    instance,
+    isPaused: false
+  });
+}
+
+function pushTerminalData(id: string, data: string) {
+  let batcher = ptyBatchers.get(id);
+  if (!batcher) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(`terminal.incData.${id}`, data);
+    }
+    return;
+  }
+
+  batcher.buffer += data;
+
+  // Apply backpressure if buffer exceeds watermark
+  if (batcher.buffer.length > HIGH_WATERMARK && !batcher.isPaused) {
+    if (typeof batcher.instance?.pause === 'function') {
+      try {
+        batcher.instance.pause();
+        batcher.isPaused = true;
+      } catch (e) {}
+    }
+  }
+
+  if (!batcher.timer) {
+    batcher.timer = setTimeout(() => {
+      const b = ptyBatchers.get(id);
+      if (!b) return;
+
+      const payload = b.buffer;
+      b.buffer = '';
+      b.timer = null;
+
+      if (mainWindow && !mainWindow.isDestroyed() && payload.length > 0) {
+        mainWindow.webContents.send(`terminal.incData.${id}`, payload);
+      }
+
+      // Resume PTY if paused
+      if (b.isPaused) {
+        b.isPaused = false;
+        if (typeof b.instance?.resume === 'function') {
+          try {
+            b.instance.resume();
+          } catch (e) {}
+        }
+      }
+    }, 8); // 8ms ~= 120 FPS
+  }
+}
+
+function cleanupTerminalSession(id: string) {
+  const batcher = ptyBatchers.get(id);
+  if (batcher) {
+    if (batcher.timer) clearTimeout(batcher.timer);
+    ptyBatchers.delete(id);
+  }
+  const session = sessions.get(id);
+  if (session) {
+    if (session.type === 'local' || session.type === 'gcp') {
+      try { session.instance.kill(); } catch (e) {}
+    } else if (session.type === 'ssh') {
+      try { if (session.instance.end) session.instance.end(); } catch (e) {}
+      try { if (session.client.end) session.client.end(); } catch (e) {}
+    }
+    sessions.delete(id);
+  }
+}
+
 const shell = process.env[process.platform === 'win32' ? 'COMSPEC' : 'SHELL'] || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
 
 ipcMain.on('terminal.spawnLocal', (event, id) => {
@@ -162,11 +270,14 @@ ipcMain.on('terminal.spawnLocal', (event, id) => {
       env: process.env as Record<string, string>
     })
 
+    setupPtyBatcher(id, ptyProcess)
+
     ptyProcess.onData((data) => {
-      mainWindow?.webContents.send(`terminal.incData.${id}`, data)
+      pushTerminalData(id, data)
     })
     ptyProcess.onExit((e) => {
-      mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+      pushTerminalData(id, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+      cleanupTerminalSession(id)
     })
 
     sessions.set(id, { type: 'local', instance: ptyProcess })
@@ -199,11 +310,14 @@ ipcMain.on('terminal.spawnGCP', (event, id, config) => {
       env: { ...process.env, PATH: extendedPath } as Record<string, string>
     })
 
+    setupPtyBatcher(id, ptyProcess)
+
     ptyProcess.onData((data) => {
-      mainWindow?.webContents.send(`terminal.incData.${id}`, data)
+      pushTerminalData(id, data)
     })
     ptyProcess.onExit((e) => {
-      mainWindow?.webContents.send(`terminal.incData.${id}`, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+      pushTerminalData(id, `\r\n\x1b[31m[Process exited with code ${e.exitCode}]\x1b[0m\r\n`)
+      cleanupTerminalSession(id)
     })
 
     sessions.set(id, { type: 'gcp', instance: ptyProcess, config })
@@ -223,12 +337,14 @@ ipcMain.on('terminal.spawnSSH', (event, id, config) => {
         return
       }
 
+      setupPtyBatcher(id, stream)
       sessions.set(id, { type: 'ssh', instance: stream, client: conn })
 
       stream.on('close', () => {
         conn.end()
+        cleanupTerminalSession(id)
       }).on('data', (data: Buffer) => {
-        mainWindow?.webContents.send(`terminal.incData.${id}`, data.toString('utf8'))
+        pushTerminalData(id, data.toString('utf8'))
       })
     })
   }).on('error', (err) => {
@@ -367,16 +483,7 @@ ipcMain.on('terminal.resize', (event, id, cols, rows) => {
 })
 
 ipcMain.on('terminal.close', (event, id) => {
-  const session = sessions.get(id)
-  if (!session) return
-
-  if (session.type === 'local' || session.type === 'gcp') {
-    session.instance.kill()
-  } else if (session.type === 'ssh') {
-    if (session.instance.end) session.instance.end()
-    if (session.client.end) session.client.end()
-  }
-  sessions.delete(id)
+  cleanupTerminalSession(id);
 })
 
 ipcMain.handle('dialog.selectFile', async () => {
@@ -957,5 +1064,92 @@ ipcMain.handle('system.fetch', async (event, url: string, options: any) => {
     };
   } catch (e: any) {
     return { success: false, message: e.message };
+  }
+});
+
+// SSE Streaming Fetch for AI LLMs
+ipcMain.handle('system.fetchStream', async (event, reqId: string, url: string, options: any) => {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, message: errText || `HTTP ${res.status}` };
+    }
+    if (!res.body) {
+      return { success: false, message: 'Response body is empty' };
+    }
+
+    // Process stream chunks asynchronously
+    (async () => {
+      try {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(':')) continue; // Skip comments and empty lines
+            if (trimmed === 'data: [DONE]') {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(`ai.stream.done.${reqId}`);
+              }
+              return;
+            }
+            if (trimmed.startsWith('data: ')) {
+              const jsonStr = trimmed.slice(6);
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const delta = parsed.choices?.[0]?.delta?.content || parsed.message?.content || '';
+                if (delta && mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send(`ai.stream.delta.${reqId}`, delta);
+                }
+              } catch (e) {
+                // Ignore partial JSON parse errors
+              }
+            }
+          }
+        }
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`ai.stream.done.${reqId}`);
+        }
+      } catch (err: any) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`ai.stream.error.${reqId}`, err.message || 'Stream error');
+        }
+      }
+    })();
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, message: e.message };
+  }
+});
+
+// Clipboard Native Handlers
+ipcMain.handle('system.readClipboard', async () => {
+  try {
+    return clipboard.readText();
+  } catch (e: any) {
+    console.error('Clipboard read error:', e);
+    return '';
+  }
+});
+
+ipcMain.handle('system.writeClipboard', async (event, text: string) => {
+  try {
+    clipboard.writeText(text);
+    return true;
+  } catch (e: any) {
+    console.error('Clipboard write error:', e);
+    return false;
   }
 });

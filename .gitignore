@@ -9,3 +9,5 @@ release/
 .env.development.local
 .env.test.local
 .env.production.local
+app/*.py
+app/*.cjs

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   spawnSSH: (id: string, config: any) => ipcRenderer.send('terminal.spawnSSH', id, config),
   spawnGCP: (id: string, config: any) => ipcRenderer.send('terminal.spawnGCP', id, config),
   onTerminalData: (id: string, callback: (data: string) => void) => {
+    ipcRenderer.removeAllListeners(`terminal.incData.${id}`)
     ipcRenderer.on(`terminal.incData.${id}`, (_event, data) => callback(data))
   },
   sendToTerminal: (id: string, data: string) => ipcRenderer.send('terminal.toTerm', id, data),
@@ -42,6 +43,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showMessageBox: (options: any) => ipcRenderer.invoke('dialog.showMessageBox', options),
   runOllamaList: () => ipcRenderer.invoke('system.runOllamaList'),
   systemFetch: (url: string, options: any) => ipcRenderer.invoke('system.fetch', url, options),
+  systemFetchStream: (reqId: string, url: string, options: any, callbacks: { onDelta: (chunk: string) => void, onDone: () => void, onError: (err: string) => void }) => {
+    ipcRenderer.removeAllListeners(`ai.stream.delta.${reqId}`);
+    ipcRenderer.removeAllListeners(`ai.stream.done.${reqId}`);
+    ipcRenderer.removeAllListeners(`ai.stream.error.${reqId}`);
+
+    ipcRenderer.on(`ai.stream.delta.${reqId}`, (_e, delta) => callbacks.onDelta(delta));
+    ipcRenderer.once(`ai.stream.done.${reqId}`, () => {
+      ipcRenderer.removeAllListeners(`ai.stream.delta.${reqId}`);
+      ipcRenderer.removeAllListeners(`ai.stream.error.${reqId}`);
+      callbacks.onDone();
+    });
+    ipcRenderer.once(`ai.stream.error.${reqId}`, (_e, err) => {
+      ipcRenderer.removeAllListeners(`ai.stream.delta.${reqId}`);
+      ipcRenderer.removeAllListeners(`ai.stream.done.${reqId}`);
+      callbacks.onError(err);
+    });
+
+    return ipcRenderer.invoke('system.fetchStream', reqId, url, options);
+  },
+  readClipboard: () => ipcRenderer.invoke('system.readClipboard'),
+  writeClipboard: (text: string) => ipcRenderer.invoke('system.writeClipboard', text),
   
   // Vault
   vaultEncrypt: (text: string, masterPass: string) => ipcRenderer.invoke('vault.encrypt', text, masterPass),

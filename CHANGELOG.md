@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-11-02
+
+### Added
+- **Vincent AI Autonomous & Live Command Execution**: Direct PTY dispatch eliminating command truncation and ghost `SIGINT` interference over SSH.
+- **Auto-Correction & Command Logging**: Integrated command execution log with persistent history and automatic terminal error diagnosis.
+- **Native Context7, Gentleman Guardrails & Engram**: Integrated proactive context retrieval, command safety analysis, and persistent AI memory.
+- **Interactive Command History**: DevTools console API (`getCommandHistory()`, `clearCommandHistory()`) and UI history view for auditing executed commands.
+
+### Changed
+- **Sessions Sidebar Layout Redesign**: Fixed macOS window traffic lights padding isolation, preventing vertical misalignment between controls and sessions tree.
+- **Action Buttons & Search Bar**: Full-width alignment without text wrapping, plus cleaned up redundant port tags on standard SSH sessions (:22).
+
 ## [2.2.2] - 2026-07-17
 
 ### Added

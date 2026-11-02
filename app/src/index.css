@@ -107,6 +107,21 @@ html, body, #root {
   background-color: var(--bg-app);
   color: var(--text-main);
   overflow: hidden;
+  user-select: none;
+}
+
+/* Allow text selection only inside terminals, code blocks and editable inputs */
+.xterm, pre, code, input, textarea, [contenteditable="true"] {
+  user-select: text;
+}
+
+/* Window Drag Regions for frameless / hiddenInset titlebar */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
 }
 
 [data-theme='vincent'] #root > div {

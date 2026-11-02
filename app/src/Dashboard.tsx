@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import GridLayout from 'react-grid-layout';
-import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
-import { FaPalette, FaCheck, FaLinux, FaSyncAlt } from 'react-icons/fa';
+import { FaLinux, FaSyncAlt } from 'react-icons/fa';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import type { DashboardConfig, SavedSession } from './App';
@@ -32,7 +31,6 @@ interface ServerState {
 export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveDashboard }) => {
   const lang = settings?.language || 'en';
   const [stats, setStats] = useState<Record<string, ServerState>>({});
-  const [editingColor, setEditingColor] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const statsRef = useRef(stats);
   const [width, setWidth] = useState(1200);
@@ -127,7 +125,7 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
   }, [config.id, sessions]);
 
   // Poll stats
-  const pollRef = useRef<() => Promise<void>>();
+  const pollRef = useRef<(() => Promise<void>) | undefined>(undefined);
   useEffect(() => {
     const poll = async () => {
       for (const widget of config.widgets) {
@@ -183,7 +181,7 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
     setTimeout(() => setRefreshing(false), 600);
   };
 
-  const handleLayoutChange = (layout: any[]) => {
+  const handleLayoutChange = (layout: readonly any[]) => {
     const newWidgets = config.widgets.map(w => {
       const match = layout.find(l => l.i === w.sessionId);
       if (match) {
@@ -195,18 +193,9 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
     onSaveDashboard({ ...config, widgets: newWidgets });
   };
 
-  const handleColorChange = (sessionId: string, color: string) => {
-    const newWidgets = config.widgets.map(w => w.sessionId === sessionId ? { ...w, color } : w);
-    onSaveDashboard({ ...config, widgets: newWidgets });
-    setEditingColor(null);
-  };
-
-  const PRESET_COLORS = ['var(--bg-panel)', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
-
   const renderWidget = (widget: any) => {
     const session = sessions.find(s => s.id === widget.sessionId);
     const s = stats[widget.sessionId]?.current || { cpu: 0, memTotal: 0, memUsed: 0, diskTotal: 0, diskUsed: 0, status: 'connecting' };
-    const history = stats[widget.sessionId]?.history || [];
     
     const ramPct = ((s.memTotal ? (s.memUsed / s.memTotal) : 0) * 100 || 0).toFixed(0);
     const diskPct = ((s.diskTotal ? (s.diskUsed / s.diskTotal) : 0) * 100 || 0).toFixed(0);
@@ -272,6 +261,8 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
     minH: 2
   })), [config.widgets]);
 
+  const ReactGridLayout: any = GridLayout;
+
   return (
     <div ref={containerRef} className="p-6 overflow-y-auto overflow-x-hidden" style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, backgroundColor: 'var(--bg-app)', color: 'var(--text-main)' }}>
       <div className="flex items-center gap-3 mb-6">
@@ -287,7 +278,7 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
       </div>
       
       {width > 0 && (
-        <GridLayout
+        <ReactGridLayout
           className="layout"
           layout={layout}
           cols={12}
@@ -299,7 +290,7 @@ export const Dashboard: React.FC<Props> = ({ config, sessions, settings, onSaveD
           preventCollision={false}
         >
           {config.widgets.map(w => renderWidget(w))}
-        </GridLayout>
+        </ReactGridLayout>
       )}
     </div>
   );
