@@ -1675,6 +1675,13 @@ const AiDrawer = ({
   const [commandFilter, setCommandFilter] = useState('');
 
   useEffect(() => {
+    if (!(window as any).__vintermTerminal) {
+      (window as any).__vintermTerminal = {};
+    }
+    (window as any).__vintermTerminal.setMessages = setMessages;
+  }, []);
+
+  useEffect(() => {
     return subscribeCommandHistory(() => {
       setCommandLogs(getCommandHistory());
     });
@@ -3111,6 +3118,15 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
     terminalDataSubscribersRef.current.add(cb);
     return () => {
       terminalDataSubscribersRef.current.delete(cb);
+    };
+  }, []);
+
+  useEffect(() => {
+    (window as any).__vintermTerminal = {
+      ...(window as any).__vintermTerminal,
+      setShowAi,
+      setShowSftp,
+      setShowQuickAi
     };
   }, []);
 

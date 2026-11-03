@@ -72,6 +72,211 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  if (process.argv.includes('--capture-screenshots')) {
+    mainWindow.webContents.once('did-finish-load', async () => {
+      console.log('=== [CAPTURE-SCREENSHOTS] STARTED ===');
+      await new Promise(r => setTimeout(r, 2500));
+
+      const targetDir = path.resolve(__dirname, '../../website/assets');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      const snap = async (filename: string) => {
+        if (!mainWindow) return;
+        const img = await mainWindow.webContents.capturePage();
+        const p = path.join(targetDir, filename);
+        fs.writeFileSync(p, img.toPNG());
+        console.log(`[CAPTURE-SCREENSHOTS] Saved: ${filename} (${img.getSize().width}x${img.getSize().height})`);
+      };
+
+      try {
+        // Step 1: Initialize demo state with our global hooks
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setVaultStatus('unlocked');
+              window.__vinterm.setFolders([
+                { id: 'f1', name: 'Dev', parentId: null, isOpen: true },
+                { id: 'f2', name: 'Uat', parentId: null, isOpen: true },
+                { id: 'f3', name: 'Production', parentId: null, isOpen: false }
+              ]);
+              window.__vinterm.setSavedSessions([
+                { id: 's1', name: 'EXO-DIQ', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.85.226.145', port: 22 } },
+                { id: 's2', name: 'Observability_dev', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.168.115.73', port: 2222 } },
+                { id: 's3', name: 'Brokersv2', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.14.91.116', port: 22 } },
+                { id: 's4', name: 'k8s-cluster-uat', folderId: 'f2', type: 'ssh', config: { username: 'admin', host: '10.0.12.44', port: 22 } },
+                { id: 's5', name: 'redis-sentinel-uat', folderId: 'f2', type: 'ssh', config: { username: 'root', host: '10.0.12.89', port: 6379 } },
+                { id: 's6', name: 'gcp-production-gw', folderId: 'f3', type: 'gcp', config: { gcpInstance: 'gw-west-01', gcpZone: 'us-west1-b', gcpProject: 'kappsco-cloud' } }
+              ]);
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+
+        // 1. Capture Main Terminal with clean sidebar (screenshot-1.png)
+        await snap('screenshot-1.png');
+
+        // 2. Open Vincent AI drawer (screenshot-2.png & hero.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vintermTerminal) {
+              window.__vintermTerminal.setShowAi(true);
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+        await snap('screenshot-2.png');
+        await snap('hero.png');
+
+        // 3. Vincent AI with interactive DevOps solution (screenshot-3.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vintermTerminal && window.__vintermTerminal.setMessages) {
+              window.__vintermTerminal.setShowAi(true);
+              window.__vintermTerminal.setMessages([
+                { role: 'user', content: 'Revisa el estado de la memoria y los contenedores de producción.' },
+                { 
+                  role: 'assistant', 
+                  content: 'He analizado el contexto del sistema. Los servicios están operando normalmente con un uso de RAM del 42%. Sugiero ejecutar la verificación de salud:',
+                  actions: [
+                    { type: 'insert_command', command: 'docker compose ps --format "table {{.Name}}\\\\t{{.Status}}\\\\t{{.Ports}}"' }
+                  ]
+                }
+              ]);
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+        await snap('screenshot-3.png');
+
+        // 4. Open Monitoring Dashboard (screenshot-4.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vintermTerminal) window.__vintermTerminal.setShowAi(false);
+            if (window.__vinterm) window.__vinterm.openDashboardManager();
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+        await snap('screenshot-4.png');
+
+        // 5. Open Engram Modal (screenshot-5.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            if (window.__vinterm) window.__vinterm.setShowEngramModal(true);
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-5.png');
+
+        // 6. Open Settings Modal - General (screenshot-6.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setShowEngramModal(false);
+              window.__vinterm.setShowSettingsModal(true);
+              window.__vinterm.setActiveSettingsTab('general');
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+        await snap('screenshot-6.png');
+
+        // 7. Settings Modal - Vincent AI Tab (screenshot-7.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setActiveSettingsTab('ai');
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-7.png');
+
+        // 8. Open Quick AI Command Palette (screenshot-8.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setShowSettingsModal(false);
+              window.__vinterm.setTabs([
+                { id: 'tab-1', type: 'local', title: 'Terminal Local' }
+              ]);
+              window.__vinterm.setActiveTab('tab-1');
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 800));
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vintermTerminal) {
+              window.__vintermTerminal.setShowAi(false);
+              window.__vintermTerminal.setShowSftp(false);
+              window.__vintermTerminal.setShowQuickAi(true);
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-8.png');
+
+        // 9. Open New Session Modal (screenshot-9.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vintermTerminal) window.__vintermTerminal.setShowQuickAi(false);
+            if (window.__vinterm) window.__vinterm.setShowSessionModal(true);
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-9.png');
+
+        // 10. Multi-Vault Selector (screenshot-10.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setShowSessionModal(false);
+              window.__vinterm.setVaultStatus('selecting');
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-10.png');
+
+        // 11. Vault Password Unlock Screen (screenshot-11.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) window.__vinterm.setVaultStatus('locked');
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1000));
+        await snap('screenshot-11.png');
+
+        // 12. Split Tabs & Active Session (screenshot-12.png)
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            if (window.__vinterm) {
+              window.__vinterm.setVaultStatus('unlocked');
+              window.__vinterm.setTabs([
+                { id: 'tab-1', type: 'local', title: 'Terminal Local' },
+                { id: 'tab-2', type: 'ssh', title: 'EXO-DIQ (prod)' },
+                { id: 'tab-3', type: 'ssh', title: 'Observability_dev' }
+              ]);
+              window.__vinterm.setActiveTab('tab-2');
+            }
+          })()
+        `);
+        await new Promise(r => setTimeout(r, 1200));
+        await snap('screenshot-12.png');
+
+        console.log('[CAPTURE-SCREENSHOTS] ALL 12 SCREENSHOTS & HERO REFRESHED WITH V1.0.5 UI!');
+      } catch (e: any) {
+        console.error('[CAPTURE-SCREENSHOTS] Error:', e);
+      } finally {
+        console.log('=== [CAPTURE-SCREENSHOTS] FINISHED ===');
+        app.quit();
+      }
+    });
+  }
+
   mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
     console.error('PRELOAD ERROR in path:', preloadPath);
     console.error(error);

@@ -344,6 +344,21 @@ function App() {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
+  useEffect(() => {
+    (window as any).__vinterm = {
+      setVaultStatus,
+      setSavedSessions,
+      setFolders,
+      setShowSettingsModal,
+      setShowSessionModal,
+      setShowEngramModal,
+      openDashboardManager,
+      setTabs,
+      setActiveTab,
+      setActiveSettingsTab
+    };
+  }, []);
+
   const openSettings = async () => {
     setSettingsForm(settings); 
     setShowSettingsModal(true);
