@@ -89,7 +89,7 @@ function buildFooter(type: 'local' | 'ssh' | 'gcp', config?: any): string {
   const badge = getSessionBadge(type, config);
 
   const divider = `\x1b[38;2;51;65;85m  ────────────────────────────────────────────────────────────\x1b[0m\r\n`;
-  const infoRow = `  \x1b[1;38;2;0;245;255m⚡ VinTerm\x1b[0m \x1b[38;2;100;116;139mv1.0.4\x1b[0m  \x1b[38;2;71;85;105m│\x1b[0m  ${badge}  \x1b[38;2;71;85;105m│\x1b[0m  \x1b[1;38;2;251;191;36m${aiKey}\x1b[0m \x1b[38;2;203;213;225mCopiloto AI\x1b[0m\r\n`;
+  const infoRow = `  \x1b[1;38;2;0;245;255m⚡ VinTerm\x1b[0m \x1b[38;2;100;116;139mv1.0.5\x1b[0m  \x1b[38;2;71;85;105m│\x1b[0m  ${badge}  \x1b[38;2;71;85;105m│\x1b[0m  \x1b[1;38;2;251;191;36m${aiKey}\x1b[0m \x1b[38;2;203;213;225mCopiloto AI\x1b[0m\r\n`;
   const tipRow = `  \x1b[38;2;148;163;184m💡 Tip: Presiona \x1b[1;38;2;0;245;255m${aiKey}\x1b[0;38;2;148;163;184m para consultar comandos y autocompletar con IA.\x1b[0m\r\n\r\n`;
 
   return `${divider}${infoRow}${tipRow}`;

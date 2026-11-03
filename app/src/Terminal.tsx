@@ -3126,9 +3126,17 @@ export const TerminalComponent: React.FC<TerminalProps> = ({ id, type, config, i
       ...(window as any).__vintermTerminal,
       setShowAi,
       setShowSftp,
-      setShowQuickAi
+      setShowQuickAi,
+      cleanSensitivePrompt: () => {
+        if (xtermRef.current) {
+          xtermRef.current.reset();
+          playWelcomeBanner(xtermRef.current, { type, config }, () => {
+            xtermRef.current?.write('\x1b[1;32mdevops@cloud-cluster\x1b[0m:\x1b[1;34m~/app\x1b[0m$ ');
+          });
+        }
+      }
     };
-  }, []);
+  }, [type, config]);
 
   const envContext: EnvContext = useMemo(() => {
     const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('mac');

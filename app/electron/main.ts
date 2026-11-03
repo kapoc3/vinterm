@@ -91,7 +91,7 @@ function createWindow() {
       };
 
       try {
-        // Step 1: Initialize demo state with our global hooks
+        // Step 1: Initialize demo state with censored & anonymized clean data
         await mainWindow.webContents.executeJavaScript(`
           (() => {
             if (window.__vinterm) {
@@ -102,13 +102,16 @@ function createWindow() {
                 { id: 'f3', name: 'Production', parentId: null, isOpen: false }
               ]);
               window.__vinterm.setSavedSessions([
-                { id: 's1', name: 'EXO-DIQ', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.85.226.145', port: 22 } },
-                { id: 's2', name: 'Observability_dev', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.168.115.73', port: 2222 } },
-                { id: 's3', name: 'Brokersv2', folderId: 'f1', type: 'ssh', config: { username: 'iquser', host: '20.14.91.116', port: 22 } },
-                { id: 's4', name: 'k8s-cluster-uat', folderId: 'f2', type: 'ssh', config: { username: 'admin', host: '10.0.12.44', port: 22 } },
-                { id: 's5', name: 'redis-sentinel-uat', folderId: 'f2', type: 'ssh', config: { username: 'root', host: '10.0.12.89', port: 6379 } },
-                { id: 's6', name: 'gcp-production-gw', folderId: 'f3', type: 'gcp', config: { gcpInstance: 'gw-west-01', gcpZone: 'us-west1-b', gcpProject: 'kappsco-cloud' } }
+                { id: 's1', name: 'api-gateway-dev', folderId: 'f1', type: 'ssh', config: { username: 'ubuntu', host: '10.0.1.15', port: 22 } },
+                { id: 's2', name: 'observability-metrics', folderId: 'f1', type: 'ssh', config: { username: 'devops', host: '10.0.1.20', port: 2222 } },
+                { id: 's3', name: 'message-broker-cluster', folderId: 'f1', type: 'ssh', config: { username: 'appuser', host: '10.0.1.55', port: 22 } },
+                { id: 's4', name: 'k8s-cluster-uat', folderId: 'f2', type: 'ssh', config: { username: 'admin', host: '10.10.2.40', port: 22 } },
+                { id: 's5', name: 'redis-sentinel-uat', folderId: 'f2', type: 'ssh', config: { username: 'root', host: '10.10.2.80', port: 6379 } },
+                { id: 's6', name: 'cloud-edge-gateway', folderId: 'f3', type: 'gcp', config: { gcpInstance: 'gw-prod-01', gcpZone: 'us-west1-b', gcpProject: 'kappsco-prod' } }
               ]);
+            }
+            if (window.__vintermTerminal && window.__vintermTerminal.cleanSensitivePrompt) {
+              window.__vintermTerminal.cleanSensitivePrompt();
             }
           })()
         `);
@@ -212,6 +215,9 @@ function createWindow() {
             if (window.__vintermTerminal) {
               window.__vintermTerminal.setShowAi(false);
               window.__vintermTerminal.setShowSftp(false);
+              if (window.__vintermTerminal.cleanSensitivePrompt) {
+                window.__vintermTerminal.cleanSensitivePrompt();
+              }
               window.__vintermTerminal.setShowQuickAi(true);
             }
           })()
@@ -234,6 +240,10 @@ function createWindow() {
           (() => {
             if (window.__vinterm) {
               window.__vinterm.setShowSessionModal(false);
+              localStorage.setItem('kx_vaults_index', JSON.stringify([
+                { id: 'v1', name: 'Cloud Infrastructure & K8s', hint: 'Clave corporativa' },
+                { id: 'v2', name: 'Personal & Staging Vault', hint: 'Clave de desarrollo' }
+              ]));
               window.__vinterm.setVaultStatus('selecting');
             }
           })()
@@ -257,10 +267,13 @@ function createWindow() {
               window.__vinterm.setVaultStatus('unlocked');
               window.__vinterm.setTabs([
                 { id: 'tab-1', type: 'local', title: 'Terminal Local' },
-                { id: 'tab-2', type: 'ssh', title: 'EXO-DIQ (prod)' },
-                { id: 'tab-3', type: 'ssh', title: 'Observability_dev' }
+                { id: 'tab-2', type: 'ssh', title: 'api-gateway-dev' },
+                { id: 'tab-3', type: 'ssh', title: 'observability-metrics' }
               ]);
-              window.__vinterm.setActiveTab('tab-2');
+              window.__vinterm.setActiveTab('tab-1');
+            }
+            if (window.__vintermTerminal && window.__vintermTerminal.cleanSensitivePrompt) {
+              window.__vintermTerminal.cleanSensitivePrompt();
             }
           })()
         `);
@@ -465,6 +478,12 @@ const shell = process.env[process.platform === 'win32' ? 'COMSPEC' : 'SHELL'] ||
 
 ipcMain.on('terminal.spawnLocal', (event, id) => {
   console.log(`[IPC] terminal.spawnLocal received for id: ${id}`);
+  if (process.argv.includes('--capture-screenshots')) {
+    setTimeout(() => {
+      pushTerminalData(id, '\x1b[1;32mdevops@cloud-cluster\x1b[0m:\x1b[1;34m~/app\x1b[0m$ ');
+    }, 450);
+    return;
+  }
   try {
     const args = process.platform === 'win32' ? [] : ['--login'];
     const ptyProcess = pty.spawn(shell, args, {
